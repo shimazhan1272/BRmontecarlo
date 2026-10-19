@@ -1,0 +1,6 @@
+{
+  "name": "ボートレース モンテカルロ法 資金管理",
+  "description": "ボートレース向けモンテカルロ法資金管理ツール。点数・損益分岐オッズ・両端消しオッズの自動計算と配当リアルタイム試算に対応したスマホ最適化ダークテーマWebアプリ。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
