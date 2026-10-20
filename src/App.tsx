@@ -36,14 +36,15 @@ import { motion, AnimatePresence } from 'motion/react';
 export interface AppSettings {
   initialSequenceStr: string;   // 初期数字列の文字列 (カンマ区切り)
   unitAmount: number;            // 1単位の金額 (円、デフォルト100円)
-  defaultPoints: number;         // 賭ける点数 (1〜20点、デフォルト3点)
+  defaultPoints: number;         // 賭ける点数 (1〜20点、デフォルト1点)
   bankrollLimit: number;         // 資金上限 (警告しきい値、円)
   fixedBothEndsMode: boolean;    // 固定両端モード (ONなら配当に関係なく両端1個ずつ削除)
   autoRestartOnComplete: boolean;// サイクル完了時の自動再開ON/OFF
+  allocationMode: 'exact' | 'uniform'; // 配分モード: 目標ぴったり配分(exact) | 均等切り上げ(uniform)
 }
 
 export type ResultType = 'hit' | 'miss';
-export type UpdateActionType = 'both_2' | 'both_1' | 'right' | 'add' | 'miss';
+export type UpdateActionType = 'both_dynamic' | 'both_2' | 'both_1' | 'right' | 'add' | 'miss';
 
 export interface RaceRecord {
   id: string;
@@ -86,6 +87,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   bankrollLimit: 50000,
   fixedBothEndsMode: false,
   autoRestartOnComplete: false,
+  allocationMode: 'exact', // 目標賭け金にできるだけ合わせる「ぴったり配分」
 };
 
 const STORAGE_KEY = 'boatrace_monte_carlo_state_v2';
@@ -258,82 +260,122 @@ export function calculateBetUnits(sequence: number[]): number {
 
 /**
  * 【計算ロジック2: 点数配分と舟券購入金額算出】
- * 画像解説表の「基準を100円にした場合」に基づき、ボートレースの購入単位(100円)へ切り上げ。
- * - 目標賭け金合計 = 指数(単位数) × 基準額(1単位の金額)
- * - 1点あたり購入額 = ceil((目標賭け金合計 ÷ 点数) ÷ 100) × 100
- * - 実際の購入合計 = 1点あたり購入額 × 点数
+ * 
+ * ユーザー指定の柔軟な資金配分:
+ * 例: 目標賭け金400円、賭ける点数3点の場合
+ * - 「ぴったり配分(傾斜)」: 1点目200円、2点目100円、3点目100円 ➔ 購入合計 400円 (目標と完全一致！)
+ * - 「均等切り上げ」: 各点200円 ➔ 購入合計 600円
  * 
  * @param units 賭け単位数 (指数)
  * @param unitAmount 基準額 (1単位の金額、デフォルト100円)
  * @param points 賭ける点数 (1〜20点)
- * @returns 目標合計、1点あたり購入額、実際の購入合計
+ * @param allocationMode 'exact' (目標ぴったり配分/端数傾斜) | 'uniform' (均等切り上げ)
+ * @returns 目標合計、各買い目の購入額配列(pointAmounts)、代表購入額(perPointAmount)、実際の購入合計(actualTotal)
  */
 export function calculateBetAmounts(
   units: number,
   unitAmount: number,
-  points: number
-): { targetTotal: number; perPointAmount: number; actualTotal: number } {
+  points: number,
+  allocationMode: 'exact' | 'uniform' = 'exact'
+): {
+  targetTotal: number;
+  perPointAmount: number;
+  actualTotal: number;
+  pointAmounts: number[];
+} {
   const safePoints = Math.max(1, points);
   const targetTotal = Math.max(0, units * unitAmount);
-  // 点数あたりに分割し、舟券の最低単位100円へ切り上げ
-  const rawPerPoint = safePoints > 0 ? targetTotal / safePoints : 100;
-  const perPointAmount = Math.max(100, Math.ceil(rawPerPoint / 100) * 100);
-  const actualTotal = perPointAmount * safePoints;
+
+  // 1. 均等切り上げ配分: 全点数を同じ切り上げ額で購入 (例: 400円/3点 ➔ 各200円、計600円)
+  if (allocationMode === 'uniform') {
+    const rawPerPoint = safePoints > 0 ? targetTotal / safePoints : 100;
+    const perPointAmount = Math.max(100, Math.ceil(rawPerPoint / 100) * 100);
+    const actualTotal = perPointAmount * safePoints;
+    const pointAmounts = Array(safePoints).fill(perPointAmount);
+    return {
+      targetTotal,
+      perPointAmount,
+      actualTotal,
+      pointAmounts,
+    };
+  }
+
+  // 2. 目標ぴったり配分 (端数傾斜配分):
+  // 舟券の最低単位は各点100円。
+  // 目標金額が points * 100 未満の場合は最低額 (各100円) を配分。
+  const minRequiredTotal = safePoints * 100;
+  if (targetTotal <= minRequiredTotal) {
+    const pointAmounts = Array(safePoints).fill(100);
+    return {
+      targetTotal,
+      perPointAmount: 100,
+      actualTotal: minRequiredTotal,
+      pointAmounts,
+    };
+  }
+
+  // 目標金額を100円単位で点数に割り振り、余りの100円単位を先頭(本命)から100円ずつ上乗せ。
+  // 例: target=400円, 3点 ➔ 1点目200円, 2点目100円, 3点目100円 (計400円)
+  // 例: target=500円, 3点 ➔ 1点目200円, 2点目200円, 3点目100円 (計500円)
+  // 例: target=700円, 4点 ➔ 1点目200円, 2点目200円, 3点目200円, 4点目100円 (計700円)
+  const totalHundreds = Math.round(targetTotal / 100);
+  const baseHundreds = Math.floor(totalHundreds / safePoints);
+  const remainderHundreds = totalHundreds % safePoints;
+
+  const pointAmounts: number[] = [];
+  for (let i = 0; i < safePoints; i++) {
+    const hundreds = baseHundreds + (i < remainderHundreds ? 1 : 0);
+    pointAmounts.push(Math.max(100, hundreds * 100));
+  }
+
+  const actualTotal = pointAmounts.reduce((sum, val) => sum + val, 0);
+  const perPointAmount = pointAmounts[0]; // 代表購入額 (本命)
 
   return {
     targetTotal,
     perPointAmount,
     actualTotal,
+    pointAmounts,
   };
 }
 
 /**
- * 【計算ロジック3: 必要オッズ算出 (画像「合成オッズ - 1 = 消す個数」対応)】
- * ボートレースの実戦では複数点のうち的中するのは1点のみです。
- * 画像の消去ルールを満たすための必要配当オッズをリアルタイムに計算します:
+ * 【計算ロジック3: 必要オッズ算出 (オッズ連動ダイナミック消去対応)】
+ * 1. 払い戻し ÷ 賭け金 ＝ 的中時オッズ
+ * 2. 左右から消す数 ＝ 的中時オッズ − 1
  * 
- * 1. 3倍消去オッズ (両端から2個ずつ消去):
- *    (購入合計 × 3.0) ÷ 1点あたり購入額
- *    → 的中時に合成回収率3倍以上となり、左2個＋右2個＝計4個消去できるオッズ
- * 
- * 2. 2倍消去オッズ (両端から1個ずつ消去):
- *    (購入合計 × 2.0) ÷ 1点あたり購入額
- *    → 的中時に合成回収率2倍以上となり、左1個＋右1個＝計2個消去できるオッズ
- * 
- * 3. 損益分岐オッズ (トントン・右端消去):
- *    (購入合計 × 1.0) ÷ 1点あたり購入額
- *    → 的中時に回収率100%となり、赤字を回避するオッズ
- * 
- * @param actualTotal 今回の実際の購入合計(円)
- * @param perPointAmount 1点あたり購入額(円)
- * @returns 3倍消去オッズ、2倍消去オッズ、損益分岐オッズ
+ * - 4倍消去オッズ (左右から3個ずつ消去): (購入合計 × 4.0) ÷ 1点あたり購入額
+ * - 3倍消去オッズ (左右から2個ずつ消去): (購入合計 × 3.0) ÷ 1点あたり購入額
+ * - 2倍消去オッズ (左右から1個ずつ消去): (購入合計 × 2.0) ÷ 1点あたり購入額
+ * - 損益分岐オッズ (回収率100%トントン): (購入合計 × 1.0) ÷ 1点あたり購入額
  */
 export function calculateRequiredOdds(
   actualTotal: number,
   perPointAmount: number
-): { odds3x: number; odds2x: number; breakEvenOdds: number } {
+): { odds4x: number; odds3x: number; odds2x: number; breakEvenOdds: number } {
   if (perPointAmount <= 0) {
-    return { odds3x: 3.0, odds2x: 2.0, breakEvenOdds: 1.0 };
+    return { odds4x: 4.0, odds3x: 3.0, odds2x: 2.0, breakEvenOdds: 1.0 };
   }
 
+  const odds4x = Number(((actualTotal * 4.0) / perPointAmount).toFixed(1));
   const odds3x = Number(((actualTotal * 3.0) / perPointAmount).toFixed(1));
   const odds2x = Number(((actualTotal * 2.0) / perPointAmount).toFixed(1));
   const breakEvenOdds = Number((actualTotal / perPointAmount).toFixed(1));
 
-  return { odds3x, odds2x, breakEvenOdds };
+  return { odds4x, odds3x, odds2x, breakEvenOdds };
 }
 
 /**
- * 【計算ロジック4: 払戻金・損益・合成オッズ(回収率)算出】
+ * 【計算ロジック4: 払戻金・損益・的中時オッズ(回収率)算出】
  * ボートレースの100円あたり配当と的中した買い目の購入額から算出します。
  * - 払戻金 = floor((配当 ÷ 100) × 的中点購入額)
  * - 今回収支 = 払戻金 − 今回購入合計
- * - 合成オッズ(回収率) = 払戻金 ÷ 今回購入合計
+ * - 的中時オッズ = 払戻金 ÷ 今回の賭け金(購入合計)
  * 
  * @param payoutPer100 100円あたりの配当金(円)
  * @param winningBetAmount 的中買い目の購入額(円)
  * @param actualTotal 今回の購入合計(円)
- * @returns 払戻金、損益、合成オッズ(回収率)
+ * @returns 払戻金、損益、的中時オッズ
  */
 export function calculatePayoutAndYield(
   payoutPer100: number,
@@ -354,24 +396,26 @@ export function calculatePayoutAndYield(
 }
 
 /**
- * 【計算ロジック5: 的中時の数字列更新 (添付画像「モンテカルロ法の解説表」完全準拠)】
- * 画像下部の赤文字公式:
- * 『合成オッズ(この場合は3倍) − 1 ＝ 2個数式を消す (両端からそれぞれ消す個数)』
+ * 【計算ロジック5: 的中時の数字列更新 (オッズ連動ダイナミック消去)】
+ * ユーザー指定の完全連動ルール:
+ * 1. 払い戻し ÷ 賭け金 ＝ 的中時オッズ (recoveryRate)
+ * 2. 左右から消す数 ＝ 的中時オッズ − 1 (切り捨て整数: Math.floor(odds) - 1)
  * 
- * - 合成オッズ ≧ 3.0倍 (画像レース5・レース10):
- *     消去個数 = 3 - 1 = 2個ずつ消去 (左端から2個、右端から2個 ＝ 計4個消去)
- * - 2.0倍 ≦ 合成オッズ < 3.0倍 (画像レース8):
- *     消去個数 = 2 - 1 = 1個ずつ消去 (左端から1個、右端から1個 ＝ 計2個消去)
- * - 1.0倍 ≦ 合成オッズ < 2.0倍:
- *     右端のみ1個消去 (利益確定に向けて短縮)
- * - 合成オッズ < 1.0倍 (トリガミ / 赤字):
+ * - eraseCount = Math.floor(odds) - 1
+ * - eraseCount >= 1 の場合:
+ *     数式の左右両端から eraseCount 個ずつ消去 (合計 eraseCount * 2 個消去)
+ *     例:
+ *       的中時オッズ 2倍: 2 - 1 = 左右から1個ずつ (計2個消去)
+ *       的中時オッズ 3倍: 3 - 1 = 左右から2個ずつ (計4個消去)
+ *       的中時オッズ 4倍: 4 - 1 = 左右から3個ずつ (計6個消去)
+ *       的中時オッズ 5倍: 5 - 1 = 左右から4個ずつ (計8個消去)
+ *       的中時オッズ 10倍: 10 - 1 = 左右から9個ずつ (計18個消去)
+ *     ※ 残りの数字列の長さ <= eraseCount * 2 の場合は、すべて消去されてサイクル完了 (空配列 [])
+ *     ※ それ以外は: sequence.slice(eraseCount, sequence.length - eraseCount)
+ * - 1.0 <= odds < 2.0 の場合 (1倍台・トントン〜微益):
+ *     eraseCount = 0 ですが、赤字ではないため「右端のみ1個消去」して前進
+ * - odds < 1.0 の場合 (トリガミ / 赤字):
  *     不的中と同様に「賭けた指数(単位数)」を数列の右端に追加
- * 
- * @param sequence 現在の数字列
- * @param unitsBet 今回賭けた単位数 (指数)
- * @param recoveryRate 合成オッズ(払戻金÷購入合計)
- * @param fixedBothEndsMode 固定両端モードON/OFF
- * @returns 次の数字列、更新アクション種別、両端消去数、説明文
  */
 export function getNextSequenceOnHit(
   sequence: number[],
@@ -396,7 +440,7 @@ export function getNextSequenceOnHit(
         updateAction: 'both_1',
         eraseCountPerSide: 1,
         totalErasedCount: seqCopy.length,
-        ruleTitle: '固定モード消去',
+        ruleTitle: '固定モード',
         explanation: '両端1個ずつ消去 (サイクル完了)',
       };
     }
@@ -405,67 +449,53 @@ export function getNextSequenceOnHit(
       updateAction: 'both_1',
       eraseCountPerSide: 1,
       totalErasedCount: 2,
-      ruleTitle: '固定モード消去',
+      ruleTitle: '固定モード',
       explanation: '両端1個ずつ消去',
     };
   }
 
-  // 1. 合成オッズ 3.0倍以上 (画像公式: 3倍 - 1 = 2個消す → 両端から2個ずつ計4個消去)
-  if (recoveryRate >= 3.0) {
-    const eraseCount = 2;
+  // 的中時オッズ (払い戻し ÷ 賭け金)
+  const odds = recoveryRate;
+  // ユーザー指定公式: 的中時オッズ - 1 の数を左右から消していく
+  // 例: 2倍 -> 左右1個ずつ、3倍 -> 左右2個ずつ、4倍 -> 左右3個ずつ、5倍 -> 左右4個ずつ...
+  const eraseCount = Math.max(0, Math.floor(odds) - 1);
+
+  // 1. 的中時オッズ 2.0倍以上 (左右からそれぞれ eraseCount 個ずつ消去)
+  if (eraseCount >= 1) {
+    const totalErased = Math.min(seqCopy.length, eraseCount * 2);
+    // 残りの数字列の長さが消去個数以下なら全消去でサイクル完了
     if (seqCopy.length <= eraseCount * 2) {
       return {
         nextSequence: [],
-        updateAction: 'both_2',
+        updateAction: 'both_dynamic',
         eraseCountPerSide: eraseCount,
-        totalErasedCount: seqCopy.length,
-        ruleTitle: '3倍配当ルール (画像準拠)',
-        explanation: '合成オッズ3倍 − 1 ＝ 両端2個ずつ消去 (サイクル完了！)',
+        totalErasedCount: totalErased,
+        ruleTitle: `的中時オッズ ${odds.toFixed(1)}倍 (オッズ−1＝左右から各${eraseCount}個消去)`,
+        explanation: `払戻÷賭金＝${odds.toFixed(2)}倍 ➔ 左右から各${eraseCount}個消去 (全消去・サイクル完了！)`,
       };
     }
+    // 左右両端から eraseCount 個ずつ消去
+    const nextSeq = seqCopy.slice(eraseCount, seqCopy.length - eraseCount);
     return {
-      nextSequence: seqCopy.slice(eraseCount, seqCopy.length - eraseCount),
-      updateAction: 'both_2',
+      nextSequence: nextSeq,
+      updateAction: 'both_dynamic',
       eraseCountPerSide: eraseCount,
-      totalErasedCount: eraseCount * 2,
-      ruleTitle: '3倍配当ルール (画像準拠)',
-      explanation: '合成オッズ3倍 − 1 ＝ 両端から2個ずつ消去 (計4個消去)',
+      totalErasedCount: totalErased,
+      ruleTitle: `的中時オッズ ${odds.toFixed(1)}倍 (オッズ−1＝左右から各${eraseCount}個消去)`,
+      explanation: `払戻÷賭金＝${odds.toFixed(2)}倍 ➔ 左右から各${eraseCount}個消去 (計${totalErased}個消去)`,
     };
   }
 
-  // 2. 合成オッズ 2.0倍以上 3.0倍未満 (画像公式: 2倍 - 1 = 1個消す → 両端から1個ずつ計2個消去)
-  if (recoveryRate >= 2.0) {
-    const eraseCount = 1;
-    if (seqCopy.length <= eraseCount * 2) {
-      return {
-        nextSequence: [],
-        updateAction: 'both_1',
-        eraseCountPerSide: eraseCount,
-        totalErasedCount: seqCopy.length,
-        ruleTitle: '2倍配当ルール (画像準拠)',
-        explanation: '合成オッズ2倍 − 1 ＝ 両端1個ずつ消去 (サイクル完了！)',
-      };
-    }
-    return {
-      nextSequence: seqCopy.slice(eraseCount, seqCopy.length - eraseCount),
-      updateAction: 'both_1',
-      eraseCountPerSide: eraseCount,
-      totalErasedCount: eraseCount * 2,
-      ruleTitle: '2倍配当ルール (画像準拠)',
-      explanation: '合成オッズ2倍 − 1 ＝ 両端から1個ずつ消去 (計2個消去)',
-    };
-  }
-
-  // 3. 合成オッズ 1.0倍以上 2.0倍未満 (小勝ち・トントン)
-  if (recoveryRate >= 1.0) {
+  // 2. 的中時オッズ 1倍台 (1.0 <= odds < 2.0、回収率100%以上の微益)
+  if (odds >= 1.0) {
     if (seqCopy.length <= 1) {
       return {
         nextSequence: [],
         updateAction: 'right',
         eraseCountPerSide: 0,
         totalErasedCount: 1,
-        ruleTitle: '1倍配当ルール',
-        explanation: '合成オッズ1倍台: 右端のみ消去 (サイクル完了！)',
+        ruleTitle: `的中時オッズ ${odds.toFixed(1)}倍 (1倍台・微益)`,
+        explanation: `的中時オッズ ${odds.toFixed(2)}倍: 右端のみ1個消去 (サイクル完了！)`,
       };
     }
     return {
@@ -473,19 +503,19 @@ export function getNextSequenceOnHit(
       updateAction: 'right',
       eraseCountPerSide: 0,
       totalErasedCount: 1,
-      ruleTitle: '1倍配当ルール',
-      explanation: '合成オッズ1倍台: 右端のみ1個消去',
+      ruleTitle: `的中時オッズ ${odds.toFixed(1)}倍 (1倍台・微益)`,
+      explanation: `的中時オッズ ${odds.toFixed(2)}倍: 右端のみ1個消去`,
     };
   }
 
-  // 4. 合成オッズ 1.0倍未満 (トリガミ/赤字: 不的中扱いとして右端に追加)
+  // 3. 的中時オッズ 1.0倍未満 (トリガミ/赤字: 不的中と同様に今回賭けた指数を右端に追加)
   return {
     nextSequence: [...seqCopy, unitsBet],
     updateAction: 'add',
     eraseCountPerSide: 0,
     totalErasedCount: 0,
     ruleTitle: 'トリガミ (回収率1倍未満)',
-    explanation: '不的中と同様に賭けた指数(単位数)を数列の右端に追加',
+    explanation: `的中時オッズ ${odds.toFixed(2)}倍: 赤字のため不的中と同様に右端に指数(+${unitsBet})を追加`,
   };
 }
 
@@ -635,6 +665,12 @@ export default function App() {
   // 的中モーダル入力
   const [hitPayoutInput, setHitPayoutInput] = useState<string>('1200');
   const [hitCustomWinningAmount, setHitCustomWinningAmount] = useState<string>('');
+  const [selectedWinningPointIndex, setSelectedWinningPointIndex] = useState<number>(0);
+
+  // 手動で各買い目の金額を微調整できるようにするステート（通常はnullで自動配分）
+  const [customPointAmounts, setCustomPointAmounts] = useState<number[] | null>(null);
+  // オッズ表示で対象とする点数のインデックス (0 = 1点目/本命)
+  const [viewOddsPointIndex, setViewOddsPointIndex] = useState<number>(0);
 
   // 永続化
   useEffect(() => {
@@ -654,14 +690,45 @@ export default function App() {
   // --- 計算値 ---
   const currentUnits = useMemo(() => calculateBetUnits(sequence), [sequence]);
 
-  const { targetTotal, perPointAmount, actualTotal } = useMemo(() => {
-    return calculateBetAmounts(currentUnits, settings.unitAmount, points);
-  }, [currentUnits, settings.unitAmount, points]);
+  // 自動資金配分 (ぴったり配分: 目標400円/3点 ➔ 200+100+100=400円、または均等切り上げ)
+  const autoAllocation = useMemo(() => {
+    return calculateBetAmounts(
+      currentUnits,
+      settings.unitAmount,
+      points,
+      settings.allocationMode || 'exact'
+    );
+  }, [currentUnits, settings.unitAmount, points, settings.allocationMode]);
 
-  // 画像解説表に基づく3種類の必要オッズ
-  const { odds3x, odds2x, breakEvenOdds } = useMemo(() => {
-    return calculateRequiredOdds(actualTotal, perPointAmount);
-  }, [actualTotal, perPointAmount]);
+  // ユーザーが手動調整した各買い目の金額、または自動計算の金額
+  const activePointAmounts = useMemo(() => {
+    if (customPointAmounts && customPointAmounts.length === points) {
+      return customPointAmounts;
+    }
+    return autoAllocation.pointAmounts;
+  }, [customPointAmounts, points, autoAllocation.pointAmounts]);
+
+  const targetTotal = autoAllocation.targetTotal;
+  const actualTotal = useMemo(() => {
+    return activePointAmounts.reduce((sum, v) => sum + v, 0);
+  }, [activePointAmounts]);
+  const perPointAmount = activePointAmounts[0] || 100;
+
+  // 選択された買い目（または本命）基準の必要オッズ
+  const targetBetForOdds = activePointAmounts[viewOddsPointIndex] || perPointAmount;
+  const { odds4x, odds3x, odds2x, breakEvenOdds } = useMemo(() => {
+    return calculateRequiredOdds(actualTotal, targetBetForOdds);
+  }, [actualTotal, targetBetForOdds]);
+
+  // 買い目金額の個別手動調整ハンドラー
+  const handleAdjustPointAmount = (index: number, delta: number) => {
+    const updated = [...activePointAmounts];
+    updated[index] = Math.max(100, (updated[index] || 100) + delta);
+    setCustomPointAmounts(updated);
+  };
+  const handleResetAllocation = () => {
+    setCustomPointAmounts(null);
+  };
 
   // レース統計
   const hitCount = useMemo(() => history.filter((r) => r.result === 'hit').length, [history]);
@@ -748,13 +815,17 @@ export default function App() {
     setCycleBalance(newCycleBal);
     setLossStreak(newLossStreak);
     setHistory((prev) => [record, ...prev]);
+    setCustomPointAmounts(null);
+    setViewOddsPointIndex(0);
   }, [saveSnapshot, sequence, currentUnits, raceCount, cumulativeBalance, actualTotal, cycleBalance, lossStreak, cycleCount, points, perPointAmount]);
 
   // 的中モーダルを開く
   const openHitModal = () => {
-    setHitCustomWinningAmount(String(perPointAmount));
-    // 画像の3倍オッズをデフォルト候補に提案
-    const suggestedPayout = Math.max(100, Math.round(odds3x * 100));
+    setSelectedWinningPointIndex(0);
+    const targetWinningBet = activePointAmounts[0] || perPointAmount;
+    setHitCustomWinningAmount(String(targetWinningBet));
+    // 画像の3倍オッズ（左右2個消去）を初期値候補に提案
+    const suggestedPayout = Math.max(100, Math.round(((actualTotal * 3.0) / targetWinningBet) * 100));
     setHitPayoutInput(String(suggestedPayout));
     setIsHitModalOpen(true);
   };
@@ -762,7 +833,7 @@ export default function App() {
   // 的中試算プレビュー (画像公式: 合成オッズ - 1 = 消去個数)
   const hitPreview = useMemo(() => {
     const payout = Math.max(0, parseInt(hitPayoutInput, 10) || 0);
-    const winningAmount = Math.max(100, parseInt(hitCustomWinningAmount, 10) || perPointAmount);
+    const winningAmount = Math.max(100, parseInt(hitCustomWinningAmount, 10) || activePointAmounts[0] || perPointAmount);
     const { refund, balance, recoveryRate } = calculatePayoutAndYield(payout, winningAmount, actualTotal);
 
     const {
@@ -778,7 +849,7 @@ export default function App() {
     const nextUnits = isCycleEnd
       ? calculateBetUnits(initialSeqArray)
       : calculateBetUnits(nextSequence);
-    const nextAmounts = calculateBetAmounts(nextUnits, settings.unitAmount, points);
+    const nextAmounts = calculateBetAmounts(nextUnits, settings.unitAmount, points, settings.allocationMode || 'exact');
 
     return {
       payout,
@@ -873,6 +944,8 @@ export default function App() {
       setSequence(nextSequence);
       setCycleBalance(newCycleBal);
     }
+    setCustomPointAmounts(null);
+    setViewOddsPointIndex(0);
   };
 
   const handleStartNextCycle = () => {
@@ -1267,137 +1340,284 @@ export default function App() {
             <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3">
               <div className="text-[11px] text-slate-400 font-medium flex items-center justify-between">
                 <span>実際の購入合計</span>
-                <span className="text-[10px] text-cyan-400">舟券発券額</span>
+                {actualTotal === targetTotal ? (
+                  <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/60">
+                    目標一致
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-amber-400 font-bold">
+                    {actualTotal > targetTotal ? `+¥${actualTotal - targetTotal}` : `¥${actualTotal - targetTotal}`}
+                  </span>
+                )}
               </div>
               <div className="mt-1 flex items-baseline gap-1">
                 <span className="text-2xl font-black font-num text-white tracking-tight">
                   ¥{actualTotal.toLocaleString()}
                 </span>
               </div>
-              <div className="text-[10px] text-slate-500 mt-1">
-                1点 ¥{perPointAmount} × {points}点
+              <div className="text-[10px] text-slate-400 mt-1 truncate">
+                {points === 1
+                  ? `1点 ¥${actualTotal.toLocaleString()}`
+                  : activePointAmounts.every((v) => v === activePointAmounts[0])
+                  ? `各点 ¥${activePointAmounts[0]} × ${points}点`
+                  : activePointAmounts.map((amt, idx) => `${idx === 0 ? '本命' : `${idx + 1}点目`}¥${amt}`).join(' + ')}
               </div>
             </div>
           </div>
 
-          {/* 点数選択 & 1点あたり購入額 */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2">
-            <div>
-              <div className="text-[11px] text-slate-400">賭ける点数</div>
-              <div className="flex items-center gap-2 mt-1">
-                <button
-                  type="button"
-                  onClick={() => setPoints((p) => Math.max(1, p - 1))}
-                  className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center font-bold active:scale-95 transition-transform"
-                >
-                  <Minus className="w-3.5 h-3.5" />
-                </button>
-                <span className="w-9 text-center font-num font-bold text-lg text-white">
-                  {points}
+          {/* 点数選択 & 配分モード切り替え */}
+          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[11px] text-slate-400">賭ける点数</div>
+                <div className="flex items-center gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomPointAmounts(null);
+                      setViewOddsPointIndex(0);
+                      setPoints((p) => Math.max(1, p - 1));
+                    }}
+                    className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center font-bold active:scale-95 transition-transform"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="w-9 text-center font-num font-bold text-lg text-white">
+                    {points}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomPointAmounts(null);
+                      setViewOddsPointIndex(0);
+                      setPoints((p) => Math.min(20, p + 1));
+                    }}
+                    className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center font-bold active:scale-95 transition-transform"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-xs text-slate-400">点</span>
+                </div>
+              </div>
+
+              {/* クイック点数 */}
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 4, 6].map((pt) => (
+                  <button
+                    key={pt}
+                    type="button"
+                    onClick={() => {
+                      setCustomPointAmounts(null);
+                      setViewOddsPointIndex(0);
+                      setPoints(pt);
+                    }}
+                    className={`h-7 px-2 text-xs font-bold rounded-md transition-colors ${
+                      points === pt
+                        ? 'bg-cyan-500 text-slate-950'
+                        : 'bg-slate-800/80 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {pt}点
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 配分モード切り替え (点数 > 1 の時) */}
+            {points > 1 && (
+              <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-slate-400">配分モード:</span>
+                <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSettings((prev) => ({ ...prev, allocationMode: 'exact' }));
+                      setCustomPointAmounts(null);
+                    }}
+                    className={`px-2.5 py-1 rounded font-bold transition-all ${
+                      settings.allocationMode === 'exact'
+                        ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    🎯 ぴったり配分
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSettings((prev) => ({ ...prev, allocationMode: 'uniform' }));
+                      setCustomPointAmounts(null);
+                    }}
+                    className={`px-2.5 py-1 rounded font-bold transition-all ${
+                      settings.allocationMode === 'uniform'
+                        ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    ⚖️ 均等切上
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 各買い目ごとの配分内訳と微調整 (点数 > 1 の時に表示) */}
+          {points > 1 && (
+            <div className="bg-slate-950/70 border border-slate-800/90 rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-slate-300">
+                  買い目ごとの購入額 (タップで±100円微調整可):
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setPoints((p) => Math.min(20, p + 1))}
-                  className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center font-bold active:scale-95 transition-transform"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-                <span className="text-xs text-slate-400">点</span>
+                {customPointAmounts !== null && (
+                  <button
+                    type="button"
+                    onClick={handleResetAllocation}
+                    className="text-cyan-400 hover:underline text-[10px]"
+                  >
+                    ↩ 自動配分に戻す
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {activePointAmounts.map((amt, idx) => (
+                  <div
+                    key={idx}
+                    className={`p-2 rounded-lg border text-center transition-all ${
+                      idx === 0
+                        ? 'bg-cyan-950/20 border-cyan-800/60'
+                        : 'bg-slate-900 border-slate-800'
+                    }`}
+                  >
+                    <div className="text-[10px] text-slate-400 flex items-center justify-center gap-1">
+                      <span>{idx === 0 ? '🎯 1点目(本命)' : `${idx + 1}点目`}</span>
+                    </div>
+                    <div className="font-num font-bold text-base text-white my-1">
+                      ¥{amt.toLocaleString()}
+                    </div>
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleAdjustPointAmount(idx, -100)}
+                        disabled={amt <= 100}
+                        className="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 flex items-center justify-center font-bold text-xs"
+                      >
+                        -
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAdjustPointAmount(idx, 100)}
+                        className="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center font-bold text-xs"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-
-            {/* クイック点数 */}
-            <div className="flex items-center gap-1">
-              {[1, 2, 3, 4, 6].map((pt) => (
-                <button
-                  key={pt}
-                  type="button"
-                  onClick={() => setPoints(pt)}
-                  className={`h-7 px-2 text-xs font-bold rounded-md transition-colors ${
-                    points === pt
-                      ? 'bg-cyan-500 text-slate-950'
-                      : 'bg-slate-800/80 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {pt}点
-                </button>
-              ))}
-            </div>
-
-            {/* 1点あたり購入額 */}
-            <div className="text-right pl-2 border-l border-slate-800">
-              <div className="text-[10px] text-slate-400">1点あたり購入額</div>
-              <div className="font-num font-extrabold text-base text-cyan-400 mt-0.5">
-                ¥{perPointAmount.toLocaleString()}
-              </div>
-              <div className="text-[9px] text-slate-500">100円切上</div>
-            </div>
-          </div>
+          )}
         </section>
 
         {/* ------------------------------------------------------------------- */}
-        {/* カード3: 必要オッズ (画像「合成オッズ - 1 = 消す個数」完全対応)        */}
+        {/* カード3: 必要オッズ (オッズ連動ダイナミック消去)                      */}
         {/* ------------------------------------------------------------------- */}
         <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-2.5">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
             <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
               <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
               <span>必要オッズ (消去条件)</span>
             </span>
-            <span className="text-[10px] text-amber-400 font-mono-num bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/60">
-              合成オッズ − 1 ＝ 消す個数
+            <span className="text-[10px] text-amber-400 font-num bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/60 self-start sm:self-auto">
+              払い戻し÷賭け金＝的中時オッズ（オッズ−1個を左右から消去）
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            {/* 3倍消去オッズ (両端2個ずつ消去) */}
-            <div className="bg-slate-950/60 border border-emerald-500/40 rounded-xl p-3 relative overflow-hidden">
-              <div className="text-[11px] font-bold text-emerald-400 flex items-center justify-between">
-                <span>3倍消去オッズ</span>
-                <span className="text-[9px] bg-emerald-950/80 text-emerald-300 px-1.5 py-0.2 rounded border border-emerald-700">
-                  両端2個ずつ消去
-                </span>
+          {/* 買い目別のオッズ切り替え (各点の金額が異なる場合) */}
+          {points > 1 && !activePointAmounts.every((v) => v === activePointAmounts[0]) && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px]">
+              <span className="text-slate-400 text-[10px] shrink-0">基準買い目:</span>
+              {activePointAmounts.map((amt, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setViewOddsPointIndex(idx)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 transition-colors ${
+                    viewOddsPointIndex === idx
+                      ? 'bg-cyan-500 text-slate-950'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {idx === 0 ? '本命' : `${idx + 1}点目`} (¥{amt})
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="grid grid-cols-3 gap-2">
+            {/* 2倍消去オッズ (左右1個ずつ消去) */}
+            <div className="bg-slate-950/60 border border-cyan-500/40 rounded-xl p-2.5 text-center">
+              <div className="text-[10px] font-bold text-cyan-400">
+                2倍消去
               </div>
-              <div className="mt-1 flex items-baseline gap-1">
-                <span className="text-2xl font-black font-num text-emerald-300">
-                  {odds3x.toFixed(1)}
-                </span>
-                <span className="text-xs text-slate-400">倍 以上</span>
+              <div className="text-[9px] text-cyan-300/80">
+                左右1個ずつ消去
               </div>
-              <div className="text-[10px] text-slate-400 mt-1 leading-snug">
-                払戻金 ≧ ¥{(actualTotal * 3).toLocaleString()}
-                <br />
-                <span className="text-emerald-400 font-semibold">→ 両端から計4個消去！</span>
+              <div className="mt-1 flex items-baseline justify-center gap-0.5">
+                <span className="text-xl font-black font-num text-cyan-300">
+                  {odds2x.toFixed(1)}
+                </span>
+                <span className="text-[10px] text-slate-400">倍~</span>
+              </div>
+              <div className="text-[9px] text-slate-400 mt-0.5">
+                計2個消去
               </div>
             </div>
 
-            {/* 2倍消去オッズ (両端1個ずつ消去) */}
-            <div className="bg-slate-950/60 border border-cyan-500/40 rounded-xl p-3">
-              <div className="text-[11px] font-bold text-cyan-400 flex items-center justify-between">
-                <span>2倍消去オッズ</span>
-                <span className="text-[9px] bg-cyan-950/80 text-cyan-300 px-1.5 py-0.2 rounded border border-cyan-700">
-                  両端1個ずつ消去
-                </span>
+            {/* 3倍消去オッズ (左右2個ずつ消去) */}
+            <div className="bg-slate-950/60 border border-emerald-500/40 rounded-xl p-2.5 text-center relative overflow-hidden">
+              <div className="text-[10px] font-bold text-emerald-400">
+                3倍消去
               </div>
-              <div className="mt-1 flex items-baseline gap-1">
-                <span className="text-2xl font-black font-num text-cyan-300">
-                  {odds2x.toFixed(1)}
-                </span>
-                <span className="text-xs text-slate-400">倍 以上</span>
+              <div className="text-[9px] text-emerald-300/80">
+                左右2個ずつ消去
               </div>
-              <div className="text-[10px] text-slate-400 mt-1 leading-snug">
-                払戻金 ≧ ¥{(actualTotal * 2).toLocaleString()}
-                <br />
-                <span className="text-cyan-400 font-semibold">→ 両端から計2個消去</span>
+              <div className="mt-1 flex items-baseline justify-center gap-0.5">
+                <span className="text-xl font-black font-num text-emerald-300">
+                  {odds3x.toFixed(1)}
+                </span>
+                <span className="text-[10px] text-slate-400">倍~</span>
+              </div>
+              <div className="text-[9px] text-emerald-400 font-semibold mt-0.5">
+                計4個消去
+              </div>
+            </div>
+
+            {/* 4倍消去オッズ (左右3個ずつ消去) */}
+            <div className="bg-slate-950/60 border border-purple-500/40 rounded-xl p-2.5 text-center">
+              <div className="text-[10px] font-bold text-purple-400">
+                4倍消去
+              </div>
+              <div className="text-[9px] text-purple-300/80">
+                左右3個ずつ消去
+              </div>
+              <div className="mt-1 flex items-baseline justify-center gap-0.5">
+                <span className="text-xl font-black font-num text-purple-300">
+                  {odds4x.toFixed(1)}
+                </span>
+                <span className="text-[10px] text-slate-400">倍~</span>
+              </div>
+              <div className="text-[9px] text-purple-400 font-semibold mt-0.5">
+                計6個消去
               </div>
             </div>
           </div>
 
           <div className="flex items-center justify-between text-[11px] text-slate-400 px-1 pt-1 border-t border-slate-800">
             <span>
-              損益分岐オッズ(回収率100%): <strong className="font-num text-amber-400">{breakEvenOdds.toFixed(1)}倍</strong>
+              損益分岐オッズ (回収率100%): <strong className="font-num text-amber-400">{breakEvenOdds.toFixed(1)}倍</strong>
             </span>
-            <span className="text-slate-500 text-[10px]">的中1点のみで投資回収</span>
+            <span className="text-slate-400 text-[10px]">高オッズほど左右から多く消去</span>
           </div>
         </section>
 
@@ -1584,8 +1804,9 @@ export default function App() {
                 {/* クイック配当ボタン */}
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {[
-                    { label: '3倍消去 (両端2個)', val: Math.round(odds3x * 100) },
-                    { label: '2倍消去 (両端1個)', val: Math.round(odds2x * 100) },
+                    { label: '2倍 (左右1個)', val: Math.round(odds2x * 100) },
+                    { label: '3倍 (左右2個)', val: Math.round(odds3x * 100) },
+                    { label: '4倍 (左右3個)', val: Math.round(odds4x * 100) },
                     { label: '本命 3.0倍', val: 300 },
                     { label: '中穴 20.0倍', val: 2000 },
                     { label: '万舟 100倍', val: 10000 },
@@ -1606,15 +1827,46 @@ export default function App() {
               <div className="space-y-1.5 pt-1">
                 <div className="flex items-center justify-between text-xs">
                   <label className="font-semibold text-slate-300">的中した買い目の購入額</label>
-                  <span className="text-[10px] text-slate-400">初期値: 1点あたり額</span>
+                  <span className="text-[10px] text-slate-400">該当の買い目を選択または入力</span>
                 </div>
+
+                {/* 複数点購入時の買い目選択チップ */}
+                {activePointAmounts.length > 1 && (
+                  <div className="flex flex-wrap gap-1.5 pb-1">
+                    {activePointAmounts.map((amt, idx) => {
+                      const isSelected = selectedWinningPointIndex === idx;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setSelectedWinningPointIndex(idx);
+                            setHitCustomWinningAmount(String(amt));
+                          }}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold font-num flex items-center gap-1.5 border transition-all ${
+                            isSelected
+                              ? 'bg-cyan-500/25 text-cyan-300 border-cyan-400 ring-1 ring-cyan-400'
+                              : 'bg-slate-950 text-slate-300 border-slate-700 hover:border-slate-600'
+                          }`}
+                        >
+                          <span>{idx === 0 ? '🎯 1点目(本命)' : `${idx + 1}点目`}:</span>
+                          <span className="text-white font-extrabold">¥{amt.toLocaleString()}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <div className="relative">
                   <input
                     type="number"
                     step="100"
                     inputMode="numeric"
                     value={hitCustomWinningAmount}
-                    onChange={(e) => setHitCustomWinningAmount(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedWinningPointIndex(-1);
+                      setHitCustomWinningAmount(e.target.value);
+                    }}
                     placeholder="例: 200"
                     className="w-full h-11 bg-slate-950 border border-slate-700 rounded-xl px-3 text-base font-bold font-num text-white focus:outline-none focus:border-cyan-400"
                   />
@@ -1624,25 +1876,30 @@ export default function App() {
 
               {/* リアルタイム試算プレビューカード */}
               <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
-                <div className="text-[11px] font-bold text-slate-400 tracking-wider flex items-center justify-between">
-                  <span>消去ルール判定</span>
-                  {hitPreview.updateAction === 'both_2' ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-                      合成3倍以上 → 両端2個ずつ消去
+                <div className="space-y-1">
+                  <div className="text-[11px] font-bold text-slate-400 tracking-wider flex items-center justify-between">
+                    <span>消去ルール判定</span>
+                    <span className="text-[10px] text-cyan-400 font-num">
+                      払戻¥{hitPreview.refund.toLocaleString()} ÷ 賭金¥{actualTotal.toLocaleString()} ＝ {hitPreview.recoveryRate.toFixed(2)}倍
                     </span>
-                  ) : hitPreview.updateAction === 'both_1' ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/40">
-                      合成2倍以上 → 両端1個ずつ消去
-                    </span>
-                  ) : hitPreview.updateAction === 'right' ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40">
-                      合成1倍台 → 右端のみ消去
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/40">
-                      トリガミ → 右端に追加
-                    </span>
-                  )}
+                  </div>
+                  <div className="text-[11px] font-bold py-1.5 px-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+                    {hitPreview.eraseCountPerSide >= 1 ? (
+                      <span className="text-emerald-400 flex items-center gap-1.5 font-num flex-wrap">
+                        <span className="text-xs">🎯 的中時オッズ {hitPreview.recoveryRate.toFixed(1)}倍 − 1 ＝</span>
+                        <strong className="text-emerald-300 text-xs">左右から各{hitPreview.eraseCountPerSide}個ずつ消去</strong>
+                        <span className="text-[10px] text-slate-400 font-normal">(計{hitPreview.totalErasedCount}個消去)</span>
+                      </span>
+                    ) : hitPreview.updateAction === 'right' ? (
+                      <span className="text-amber-400 font-num text-xs">
+                        ⚠️ 的中時オッズ 1倍台 (トントン〜微益) ➔ 右端のみ1個消去
+                      </span>
+                    ) : (
+                      <span className="text-rose-400 font-num text-xs">
+                        ❌ トリガミ (回収率1倍未満) ➔ 右端に指数(+{currentUnits})を追加
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 text-center pt-1 border-t border-slate-800">
@@ -1663,7 +1920,7 @@ export default function App() {
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-slate-500">合成オッズ</div>
+                    <div className="text-[10px] text-slate-500">的中時オッズ</div>
                     <div className="font-num font-bold text-cyan-300 text-sm mt-0.5">
                       {hitPreview.recoveryRate.toFixed(2)}倍
                     </div>
@@ -1987,7 +2244,9 @@ export default function App() {
                           </span>
                         </div>
                         <span className="text-slate-500">
-                          {record.updateAction === 'both_2'
+                          {record.updateAction === 'both_dynamic'
+                            ? `左右から各${record.eraseCountPerSide}個消去 (オッズ${record.recoveryRate.toFixed(1)}倍)`
+                            : record.updateAction === 'both_2'
                             ? '両端2個消去 (3倍公式)'
                             : record.updateAction === 'both_1'
                             ? '両端1個消去 (2倍公式)'
@@ -2163,6 +2422,50 @@ export default function App() {
                     }
                     className="w-full h-10 bg-slate-950 border border-slate-700 rounded-xl px-3 font-num text-sm text-white focus:outline-none focus:border-cyan-400"
                   />
+                </div>
+
+                {/* 5. 資金配分モード */}
+                <div>
+                  <label className="font-semibold text-slate-300 block mb-1">
+                    資金配分モード (複数点購入時)
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSettings((prev) => ({ ...prev, allocationMode: 'exact' }))}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                        settings.allocationMode === 'exact'
+                          ? 'bg-cyan-500/20 border-cyan-400 text-white ring-1 ring-cyan-400'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className="font-bold text-xs flex items-center gap-1">
+                        <span>🎯 ぴったり配分</span>
+                        {settings.allocationMode === 'exact' && <span className="text-[10px] text-cyan-400 font-normal">●</span>}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-1">
+                        目標金額に一致（例: 400円/3点 ➔ 200+100+100=400円）
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSettings((prev) => ({ ...prev, allocationMode: 'uniform' }))}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                        settings.allocationMode === 'uniform'
+                          ? 'bg-cyan-500/20 border-cyan-400 text-white ring-1 ring-cyan-400'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className="font-bold text-xs flex items-center gap-1">
+                        <span>⚖️ 均等切上</span>
+                        {settings.allocationMode === 'uniform' && <span className="text-[10px] text-cyan-400 font-normal">●</span>}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-1">
+                        全点数均等額（例: 400円/3点 ➔ 各200円=600円）
+                      </div>
+                    </button>
+                  </div>
                 </div>
 
                 {/* 4. トグル設定 */}
