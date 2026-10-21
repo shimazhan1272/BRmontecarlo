@@ -366,16 +366,34 @@ export function calculateRequiredOdds(
 }
 
 /**
- * 【計算ロジック4: 払戻金・損益・的中時オッズ(回収率)算出】
- * ボートレースの100円あたり配当と的中した買い目の購入額から算出します。
- * - 払戻金 = floor((配当 ÷ 100) × 的中点購入額)
- * - 今回収支 = 払戻金 − 今回購入合計
- * - 的中時オッズ = 払戻金 ÷ 今回の賭け金(購入合計)
- * 
- * @param payoutPer100 100円あたりの配当金(円)
- * @param winningBetAmount 的中買い目の購入額(円)
- * @param actualTotal 今回の購入合計(円)
- * @returns 払戻金、損益、的中時オッズ
+ * 【計算ロジック4: 払戻金直接入力からの損益・的中時オッズ(回収率)算出】
+ * ユーザー要望: 100円あたりの配当ではなく、払い戻し金額を入力。的中した買い目の購入金額はそのまま。
+ * - 払戻金 = 入力された払い戻し金額 (円)
+ * - 今回収支 = 払戻金 − 今回購入合計 (円)
+ * - 的中時オッズ (recoveryRate) = 払戻金 ÷ 今回の賭け金(購入合計)
+ * - 100円あたり換算配当 = 的中点購入額 > 0 ? floor((払戻金 ÷ 的中点購入額) × 100) : 0
+ */
+export function calculateFromRefund(
+  refundAmount: number,
+  winningBetAmount: number,
+  actualTotal: number
+): { refund: number; balance: number; recoveryRate: number; payoutPer100: number } {
+  const refund = Math.max(0, refundAmount);
+  const safeWinningBet = Math.max(1, winningBetAmount);
+  const balance = refund - actualTotal;
+  const recoveryRate = actualTotal > 0 ? Number((refund / actualTotal).toFixed(2)) : 0;
+  const payoutPer100 = safeWinningBet > 0 ? Math.floor((refund / safeWinningBet) * 100) : 0;
+
+  return {
+    refund,
+    balance,
+    recoveryRate,
+    payoutPer100,
+  };
+}
+
+/**
+ * 【計算ロジック4 (互換用): 100円あたり配当からの算出】
  */
 export function calculatePayoutAndYield(
   payoutPer100: number,
@@ -663,7 +681,7 @@ export default function App() {
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
   // 的中モーダル入力
-  const [hitPayoutInput, setHitPayoutInput] = useState<string>('1200');
+  const [hitRefundInput, setHitRefundInput] = useState<string>('1200');
   const [hitCustomWinningAmount, setHitCustomWinningAmount] = useState<string>('');
   const [selectedWinningPointIndex, setSelectedWinningPointIndex] = useState<number>(0);
 
@@ -824,17 +842,27 @@ export default function App() {
     setSelectedWinningPointIndex(0);
     const targetWinningBet = activePointAmounts[0] || perPointAmount;
     setHitCustomWinningAmount(String(targetWinningBet));
-    // 画像の3倍オッズ（左右2個消去）を初期値候補に提案
-    const suggestedPayout = Math.max(100, Math.round(((actualTotal * 3.0) / targetWinningBet) * 100));
-    setHitPayoutInput(String(suggestedPayout));
+    // 3倍オッズ（左右各2個消去）相当の払戻金をデフォルト提案 (例: 400円なら1200円)
+    const suggestedRefund = Math.max(100, actualTotal * 3);
+    setHitRefundInput(String(suggestedRefund));
     setIsHitModalOpen(true);
   };
 
-  // 的中試算プレビュー (画像公式: 合成オッズ - 1 = 消去個数)
+  // 的中試算プレビュー (画像公式: 払い戻し ÷ 賭け金 ＝ 的中時オッズ、オッズ - 1 ＝ 消去個数)
   const hitPreview = useMemo(() => {
-    const payout = Math.max(0, parseInt(hitPayoutInput, 10) || 0);
-    const winningAmount = Math.max(100, parseInt(hitCustomWinningAmount, 10) || activePointAmounts[0] || perPointAmount);
-    const { refund, balance, recoveryRate } = calculatePayoutAndYield(payout, winningAmount, actualTotal);
+    const refundInputVal = Math.max(0, parseInt(hitRefundInput, 10) || 0);
+    const winningAmount = Math.max(
+      100,
+      parseInt(hitCustomWinningAmount, 10) ||
+        activePointAmounts[selectedWinningPointIndex] ||
+        activePointAmounts[0] ||
+        perPointAmount
+    );
+    const { refund, balance, recoveryRate, payoutPer100 } = calculateFromRefund(
+      refundInputVal,
+      winningAmount,
+      actualTotal
+    );
 
     const {
       nextSequence,
@@ -849,10 +877,16 @@ export default function App() {
     const nextUnits = isCycleEnd
       ? calculateBetUnits(initialSeqArray)
       : calculateBetUnits(nextSequence);
-    const nextAmounts = calculateBetAmounts(nextUnits, settings.unitAmount, points, settings.allocationMode || 'exact');
+    const nextAmounts = calculateBetAmounts(
+      nextUnits,
+      settings.unitAmount,
+      points,
+      settings.allocationMode || 'exact'
+    );
 
     return {
-      payout,
+      payout: payoutPer100,
+      payoutPer100,
       winningAmount,
       refund,
       balance,
@@ -868,14 +902,17 @@ export default function App() {
       nextTotal: nextAmounts.actualTotal,
     };
   }, [
-    hitPayoutInput,
+    hitRefundInput,
     hitCustomWinningAmount,
+    selectedWinningPointIndex,
+    activePointAmounts,
     perPointAmount,
     actualTotal,
     sequence,
     currentUnits,
     settings.fixedBothEndsMode,
     settings.unitAmount,
+    settings.allocationMode,
     points,
     initialSeqArray,
   ]);
@@ -1742,7 +1779,7 @@ export default function App() {
             <div className="text-left">
               <div className="leading-none text-sm font-extrabold text-slate-950">的中！(○)</div>
               <div className="text-[10px] text-slate-900/80 font-bold font-num mt-0.5">
-                配当入力へ
+                払戻金入力へ
               </div>
             </div>
           </button>
@@ -1768,8 +1805,8 @@ export default function App() {
                     🎯
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-white">的中配当の入力</h3>
-                    <p className="text-[11px] text-slate-400">画像解説表の消去公式を自動適用</p>
+                    <h3 className="text-base font-bold text-white">的中・払い戻し金額の入力</h3>
+                    <p className="text-[11px] text-slate-400">払い戻し金額から的中時オッズと消去数を自動判定</p>
                   </div>
                 </div>
                 <button
@@ -1781,41 +1818,63 @@ export default function App() {
                 </button>
               </div>
 
-              {/* 100円配当入力 */}
+              {/* 払い戻し金額入力 */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
-                  <label className="font-semibold text-slate-300">100円あたりの配当 (円)</label>
+                  <label className="font-semibold text-slate-300">払い戻し金額 (円)</label>
                   <span className="text-[11px] font-num text-cyan-400 font-bold">
-                    {( (parseInt(hitPayoutInput, 10) || 0) / 100 ).toFixed(1)} 倍
+                    的中時オッズ: {hitPreview.recoveryRate.toFixed(2)} 倍
                   </span>
                 </div>
                 <div className="relative">
                   <input
                     type="number"
                     inputMode="numeric"
-                    value={hitPayoutInput}
-                    onChange={(e) => setHitPayoutInput(e.target.value)}
+                    step="10"
+                    value={hitRefundInput}
+                    onChange={(e) => setHitRefundInput(e.target.value)}
                     placeholder="例: 1200"
                     className="w-full h-12 bg-slate-950 border border-slate-700 rounded-xl px-3 text-xl font-bold font-num text-white focus:outline-none focus:border-cyan-400"
                   />
                   <span className="absolute right-3 top-3 text-sm text-slate-500">円</span>
                 </div>
 
-                {/* クイック配当ボタン */}
+                {/* リアルタイム換算・収支サマリー */}
+                <div className="flex items-center justify-between text-[11px] text-slate-400 px-0.5 pt-0.5">
+                  <span>
+                    100円換算: <strong className="text-slate-200 font-num">約¥{hitPreview.payoutPer100.toLocaleString()}</strong> ({((hitPreview.payoutPer100 || 0) / 100).toFixed(1)}倍)
+                  </span>
+                  <span>
+                    収支: <strong className={`font-num ${hitPreview.balance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {hitPreview.balance >= 0 ? '+' : ''}¥{hitPreview.balance.toLocaleString()}
+                    </strong>
+                  </span>
+                </div>
+
+                {/* クイック払戻金ボタン */}
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {[
-                    { label: '2倍 (左右1個)', val: Math.round(odds2x * 100) },
-                    { label: '3倍 (左右2個)', val: Math.round(odds3x * 100) },
-                    { label: '4倍 (左右3個)', val: Math.round(odds4x * 100) },
-                    { label: '本命 3.0倍', val: 300 },
-                    { label: '中穴 20.0倍', val: 2000 },
-                    { label: '万舟 100倍', val: 10000 },
+                    { label: `2倍 (¥${(actualTotal * 2).toLocaleString()})`, val: actualTotal * 2 },
+                    { label: `3倍 (¥${(actualTotal * 3).toLocaleString()})`, val: actualTotal * 3 },
+                    { label: `4倍 (¥${(actualTotal * 4).toLocaleString()})`, val: actualTotal * 4 },
+                    { label: `トントン (¥${actualTotal.toLocaleString()})`, val: actualTotal },
+                    { label: '+¥500', add: 500 },
+                    { label: '+¥1,000', add: 1000 },
+                    { label: '+¥3,000', add: 3000 },
+                    { label: '+¥10,000', add: 10000 },
                   ].map((btn, idx) => (
                     <button
                       key={idx}
                       type="button"
-                      onClick={() => setHitPayoutInput(String(btn.val))}
-                      className="px-2 py-1 text-[11px] rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-medium"
+                      onClick={() => {
+                        if ('val' in btn) {
+                          setHitRefundInput(String(btn.val));
+                        } else if ('add' in btn) {
+                          const current = parseInt(hitRefundInput, 10) || 0;
+                          setHitRefundInput(String(Math.max(0, current + btn.add)));
+                        }
+                      }}
+                      className="px-2 py-1 text-[11px] rounded bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 border border-slate-700 font-medium transition-transform"
                     >
                       {btn.label}
                     </button>
