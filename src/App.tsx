@@ -839,9 +839,6 @@ export default function App() {
 
   // 的中モーダルを開く
   const openHitModal = () => {
-    setSelectedWinningPointIndex(0);
-    const targetWinningBet = activePointAmounts[0] || perPointAmount;
-    setHitCustomWinningAmount(String(targetWinningBet));
     // 3倍オッズ（左右各2個消去）相当の払戻金をデフォルト提案 (例: 400円なら1200円)
     const suggestedRefund = Math.max(100, actualTotal * 3);
     setHitRefundInput(String(suggestedRefund));
@@ -850,19 +847,10 @@ export default function App() {
 
   // 的中試算プレビュー (画像公式: 払い戻し ÷ 賭け金 ＝ 的中時オッズ、オッズ - 1 ＝ 消去個数)
   const hitPreview = useMemo(() => {
-    const refundInputVal = Math.max(0, parseInt(hitRefundInput, 10) || 0);
-    const winningAmount = Math.max(
-      100,
-      parseInt(hitCustomWinningAmount, 10) ||
-        activePointAmounts[selectedWinningPointIndex] ||
-        activePointAmounts[0] ||
-        perPointAmount
-    );
-    const { refund, balance, recoveryRate, payoutPer100 } = calculateFromRefund(
-      refundInputVal,
-      winningAmount,
-      actualTotal
-    );
+    const refund = Math.max(0, parseInt(hitRefundInput, 10) || 0);
+    const balance = refund - actualTotal;
+    const recoveryRate = actualTotal > 0 ? Number((refund / actualTotal).toFixed(2)) : 0;
+    const payoutPer100 = actualTotal > 0 ? Math.floor((refund / actualTotal) * 100) : 0;
 
     const {
       nextSequence,
@@ -887,7 +875,7 @@ export default function App() {
     return {
       payout: payoutPer100,
       payoutPer100,
-      winningAmount,
+      winningAmount: actualTotal,
       refund,
       balance,
       recoveryRate,
@@ -903,10 +891,6 @@ export default function App() {
     };
   }, [
     hitRefundInput,
-    hitCustomWinningAmount,
-    selectedWinningPointIndex,
-    activePointAmounts,
-    perPointAmount,
     actualTotal,
     sequence,
     currentUnits,
@@ -1842,10 +1826,10 @@ export default function App() {
                 {/* リアルタイム換算・収支サマリー */}
                 <div className="flex items-center justify-between text-[11px] text-slate-400 px-0.5 pt-0.5">
                   <span>
-                    100円換算: <strong className="text-slate-200 font-num">約¥{hitPreview.payoutPer100.toLocaleString()}</strong> ({((hitPreview.payoutPer100 || 0) / 100).toFixed(1)}倍)
+                    今回賭金: <strong className="text-slate-200 font-num">¥{actualTotal.toLocaleString()}</strong>
                   </span>
                   <span>
-                    収支: <strong className={`font-num ${hitPreview.balance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    今回収支: <strong className={`font-num ${hitPreview.balance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {hitPreview.balance >= 0 ? '+' : ''}¥{hitPreview.balance.toLocaleString()}
                     </strong>
                   </span>
@@ -1879,57 +1863,6 @@ export default function App() {
                       {btn.label}
                     </button>
                   ))}
-                </div>
-              </div>
-
-              {/* 的中した点の購入額 */}
-              <div className="space-y-1.5 pt-1">
-                <div className="flex items-center justify-between text-xs">
-                  <label className="font-semibold text-slate-300">的中した買い目の購入額</label>
-                  <span className="text-[10px] text-slate-400">該当の買い目を選択または入力</span>
-                </div>
-
-                {/* 複数点購入時の買い目選択チップ */}
-                {activePointAmounts.length > 1 && (
-                  <div className="flex flex-wrap gap-1.5 pb-1">
-                    {activePointAmounts.map((amt, idx) => {
-                      const isSelected = selectedWinningPointIndex === idx;
-                      return (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => {
-                            setSelectedWinningPointIndex(idx);
-                            setHitCustomWinningAmount(String(amt));
-                          }}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold font-num flex items-center gap-1.5 border transition-all ${
-                            isSelected
-                              ? 'bg-cyan-500/25 text-cyan-300 border-cyan-400 ring-1 ring-cyan-400'
-                              : 'bg-slate-950 text-slate-300 border-slate-700 hover:border-slate-600'
-                          }`}
-                        >
-                          <span>{idx === 0 ? '🎯 1点目(本命)' : `${idx + 1}点目`}:</span>
-                          <span className="text-white font-extrabold">¥{amt.toLocaleString()}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="100"
-                    inputMode="numeric"
-                    value={hitCustomWinningAmount}
-                    onChange={(e) => {
-                      setSelectedWinningPointIndex(-1);
-                      setHitCustomWinningAmount(e.target.value);
-                    }}
-                    placeholder="例: 200"
-                    className="w-full h-11 bg-slate-950 border border-slate-700 rounded-xl px-3 text-base font-bold font-num text-white focus:outline-none focus:border-cyan-400"
-                  />
-                  <span className="absolute right-3 top-3 text-xs text-slate-500">円</span>
                 </div>
               </div>
 

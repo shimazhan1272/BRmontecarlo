@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -13,10 +13,1351 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS (CDN版でHTMLファイル単体でも即座に動作) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              num: ['"Chakra Petch"', 'monospace'],
+              sans: ['"Plus Jakarta Sans"', '"Zen Kaku Gothic New"', 'sans-serif'],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      .font-num { font-family: 'Chakra Petch', monospace; font-variant-numeric: tabular-nums; }
+      @keyframes pulseSlow {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+      .animate-pulse-slow { animation: pulseSlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    </style>
+    <!-- React 18 & ReactDOM 18 & Babel Standalone (ビルド不要でGitHub Pages等でも即動作) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200 min-h-screen overflow-x-hidden">
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+
+    <script type="text/babel">
+      const { useState, useEffect, useMemo, useCallback } = React;
+
+      // =======================================================================
+      // SVG アイコンコンポーネント (外部フォント依存なしで100%確実に表示)
+      // =======================================================================
+      function Icon({ name, className = "w-4 h-4" }) {
+        switch (name) {
+          case 'check':
+            return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>;
+          case 'check-circle':
+            return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+          case 'x-circle':
+            return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+          case 'rotate-ccw':
+            return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>;
+          case 'settings':
+            return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>;
+          case 'history':
+            return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+          case 'download':
+            return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>;
+          case 'book-open':
+            return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>;
+          case 'undo':
+            return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a5 5 0 015 5v2m0 0l-4-4m4 4l4-4" transform="matrix(-1 0 0 1 24 0)" /></svg>;
+          case 'arrow-right':
+            return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>;
+          case 'alert':
+            return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>;
+          case 'x':
+            return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>;
+          default:
+            return null;
+        }
+      }
+
+      // =======================================================================
+      // モンテカルロ法 計算ロジック
+      // =======================================================================
+      function calculateBetUnits(sequence) {
+        if (!sequence || sequence.length === 0) return 0;
+        if (sequence.length === 1) return Math.max(1, sequence[0]);
+        return Math.max(1, sequence[0] + sequence[sequence.length - 1]);
+      }
+
+      function calculateBetAmounts(units, unitAmount, points, allocationMode = 'exact') {
+        const safePoints = Math.max(1, Math.min(6, points || 1));
+        const safeUnit = Math.max(10, unitAmount || 100);
+        const targetTotal = units * safeUnit;
+
+        if (safePoints === 1) {
+          const perPoint = Math.max(100, Math.ceil(targetTotal / 100) * 100);
+          return { targetTotal, perPointAmount: perPoint, actualTotal: perPoint, pointAmounts: [perPoint] };
+        }
+
+        if (allocationMode === 'uniform') {
+          const rawPerPoint = targetTotal / safePoints;
+          const perPoint = Math.max(100, Math.ceil(rawPerPoint / 100) * 100);
+          const pointAmounts = Array(safePoints).fill(perPoint);
+          const actualTotal = perPoint * safePoints;
+          return { targetTotal, perPointAmount: perPoint, actualTotal, pointAmounts };
+        }
+
+        // ぴったり配分 (exact)
+        const totalHundreds = Math.round(targetTotal / 100);
+        const baseHundreds = Math.floor(totalHundreds / safePoints);
+        const remainderHundreds = totalHundreds % safePoints;
+        const pointAmounts = [];
+        for (let i = 0; i < safePoints; i++) {
+          const hundreds = baseHundreds + (i < remainderHundreds ? 1 : 0);
+          pointAmounts.push(Math.max(100, hundreds * 100));
+        }
+        const actualTotal = pointAmounts.reduce((sum, val) => sum + val, 0);
+        return { targetTotal, perPointAmount: pointAmounts[0], actualTotal, pointAmounts };
+      }
+
+      function calculateRequiredOdds(actualTotal, perPointAmount) {
+        if (perPointAmount <= 0) return { odds4x: 4.0, odds3x: 3.0, odds2x: 2.0, breakEvenOdds: 1.0 };
+        const odds4x = Number(((actualTotal * 4.0) / perPointAmount).toFixed(1));
+        const odds3x = Number(((actualTotal * 3.0) / perPointAmount).toFixed(1));
+        const odds2x = Number(((actualTotal * 2.0) / perPointAmount).toFixed(1));
+        const breakEvenOdds = Number((actualTotal / perPointAmount).toFixed(1));
+        return { odds4x, odds3x, odds2x, breakEvenOdds };
+      }
+
+      function getNextSequenceOnHit(sequence, currentUnits, recoveryRate, fixedBothEndsMode = false) {
+        if (!sequence || sequence.length === 0) {
+          return { nextSequence: [], updateAction: 'both_1', eraseCountPerSide: 1, totalErasedCount: 0, ruleTitle: 'クリア', explanation: '完了' };
+        }
+        if (fixedBothEndsMode) {
+          if (sequence.length <= 2) return { nextSequence: [], updateAction: 'both_1', eraseCountPerSide: 1, totalErasedCount: sequence.length, ruleTitle: '両端1個消去', explanation: '完了' };
+          return { nextSequence: sequence.slice(1, -1), updateAction: 'both_1', eraseCountPerSide: 1, totalErasedCount: 2, ruleTitle: '両端1個消去', explanation: '両端各1個消去' };
+        }
+
+        const odds = recoveryRate;
+        const eraseCount = Math.max(0, Math.floor(odds) - 1);
+
+        if (eraseCount >= 1) {
+          const eraseTotal = eraseCount * 2;
+          if (sequence.length <= eraseTotal) {
+            return {
+              nextSequence: [],
+              updateAction: 'both_dynamic',
+              eraseCountPerSide: eraseCount,
+              totalErasedCount: sequence.length,
+              ruleTitle: `オッズ${odds.toFixed(1)}倍: 左右各${eraseCount}個消去 (サイクル完了)`,
+              explanation: `的中時オッズ${odds.toFixed(1)}倍 − 1 ＝ 左右から各${eraseCount}個消去。数字列が全て消えたためサイクル完了！`,
+            };
+          }
+          const nextSequence = sequence.slice(eraseCount, sequence.length - eraseCount);
+          return {
+            nextSequence,
+            updateAction: 'both_dynamic',
+            eraseCountPerSide: eraseCount,
+            totalErasedCount: eraseTotal,
+            ruleTitle: `オッズ${odds.toFixed(1)}倍: 左右各${eraseCount}個消去`,
+            explanation: `的中時オッズ${odds.toFixed(1)}倍 − 1 ＝ 左右から各${eraseCount}個消去 (計${eraseTotal}個消去)`,
+          };
+        }
+
+        if (odds >= 1.0) {
+          if (sequence.length <= 1) return { nextSequence: [], updateAction: 'right', eraseCountPerSide: 0, totalErasedCount: 1, ruleTitle: '右端1個消去', explanation: '右端消去' };
+          return { nextSequence: sequence.slice(0, -1), updateAction: 'right', eraseCountPerSide: 0, totalErasedCount: 1, ruleTitle: '右端1個消去', explanation: '右端1個消去' };
+        }
+
+        return { nextSequence: [...sequence, currentUnits], updateAction: 'add', eraseCountPerSide: 0, totalErasedCount: 0, ruleTitle: '右端に指数追加 (トリガミ)', explanation: `回収率${odds.toFixed(2)}倍 (元本割れ)。右端に+${currentUnits}を追加` };
+      }
+
+      function getNextSequenceOnMiss(sequence, currentUnits) {
+        return [...sequence, currentUnits];
+      }
+
+      const SAMPLE_EXPLANATION_TABLE = [
+        { race: 1, before: [1, 2, 3], index: 4, hit: '×', odds: '-', afterVisual: '1・2・3・4', after: [1, 2, 3, 4], bet: 400, refund: 0, balance: -400, action: 'miss' },
+        { race: 2, before: [1, 2, 3, 4], index: 5, hit: '×', odds: '-', afterVisual: '1・2・3・4・5', after: [1, 2, 3, 4, 5], bet: 500, refund: 0, balance: -900, action: 'miss' },
+        { race: 3, before: [1, 2, 3, 4, 5], index: 6, hit: '×', odds: '-', afterVisual: '1・2・3・4・5・6', after: [1, 2, 3, 4, 5, 6], bet: 600, refund: 0, balance: -1500, action: 'miss' },
+        { race: 4, before: [1, 2, 3, 4, 5, 6], index: 7, hit: '×', odds: '-', afterVisual: '1・2・3・4・5・6・7', after: [1, 2, 3, 4, 5, 6, 7], bet: 700, refund: 0, balance: -2200, action: 'miss' },
+        { race: 5, before: [1, 2, 3, 4, 5, 6, 7], index: 8, hit: '○', odds: '3倍', afterVisual: '~~1~~・~~2~~・3・4・5・~~6~~・~~7~~', after: [3, 4, 5], bet: 800, refund: 2400, balance: -600, action: 'both_2', note: '合成オッズ3倍 − 1 ＝ 両端2個消去！' },
+        { race: 6, before: [3, 4, 5], index: 8, hit: '×', odds: '-', afterVisual: '3・4・5・8', after: [3, 4, 5, 8], bet: 800, refund: 0, balance: -1400, action: 'miss' },
+        { race: 7, before: [3, 4, 5, 8], index: 11, hit: '×', odds: '-', afterVisual: '3・4・5・8・11', after: [3, 4, 5, 8, 11], bet: 1100, refund: 0, balance: -2500, action: 'miss' },
+        { race: 8, before: [3, 4, 5, 8, 11], index: 14, hit: '○', odds: '2倍', afterVisual: '~~3~~・4・5・8・~~11~~', after: [4, 5, 8], bet: 1400, refund: 2800, balance: -1100, action: 'both_1', note: '合成オッズ2倍 − 1 ＝ 両端1個消去！' },
+        { race: 9, before: [4, 5, 8], index: 12, hit: '×', odds: '-', afterVisual: '4・5・8・12', after: [4, 5, 8, 12], bet: 1200, refund: 0, balance: -2300, action: 'miss' },
+        { race: 10, before: [4, 5, 8, 12], index: 16, hit: '○', odds: '3倍', afterVisual: '~~4~~・~~5~~・~~8~~・~~12~~ (完了)', after: [], bet: 1600, refund: 4800, balance: 900, action: 'both_2', note: '合成オッズ3倍 − 1 ＝ 両端2個消去でクリア！+¥900確定' },
+      ];
+
+      const STORAGE_KEY = 'boatrace_montecarlo_v3';
+
+      function App() {
+        const [settings, setSettings] = useState(() => {
+          try {
+            const saved = localStorage.getItem(`${STORAGE_KEY}_settings`);
+            if (saved) return JSON.parse(saved);
+          } catch {}
+          return {
+            initialSequenceStr: '1, 2, 3',
+            unitAmount: 100,
+            defaultPoints: 1,
+            bankrollLimit: 20000,
+            fixedBothEndsMode: false,
+            autoRestartOnComplete: true,
+            allocationMode: 'exact',
+          };
+        });
+
+        const initialSeqArray = useMemo(() => {
+          return settings.initialSequenceStr
+            .split(',')
+            .map((s) => parseInt(s.trim(), 10))
+            .filter((n) => !isNaN(n) && n > 0);
+        }, [settings.initialSequenceStr]);
+
+        const [sequence, setSequence] = useState(() => {
+          try {
+            const saved = localStorage.getItem(`${STORAGE_KEY}_sequence`);
+            if (saved) return JSON.parse(saved);
+          } catch {}
+          return [1, 2, 3];
+        });
+
+        const [points, setPoints] = useState(() => {
+          try {
+            const saved = localStorage.getItem(`${STORAGE_KEY}_points`);
+            if (saved) return parseInt(saved, 10);
+          } catch {}
+          return 1;
+        });
+
+        const [cumulativeBalance, setCumulativeBalance] = useState(() => {
+          try {
+            const saved = localStorage.getItem(`${STORAGE_KEY}_cumBalance`);
+            if (saved) return parseInt(saved, 10);
+          } catch {}
+          return 0;
+        });
+
+        const [cycleBalance, setCycleBalance] = useState(() => {
+          try {
+            const saved = localStorage.getItem(`${STORAGE_KEY}_cycleBalance`);
+            if (saved) return parseInt(saved, 10);
+          } catch {}
+          return 0;
+        });
+
+        const [raceCount, setRaceCount] = useState(() => {
+          try {
+            const saved = localStorage.getItem(`${STORAGE_KEY}_raceCount`);
+            if (saved) return parseInt(saved, 10);
+          } catch {}
+          return 0;
+        });
+
+        const [cycleCount, setCycleCount] = useState(() => {
+          try {
+            const saved = localStorage.getItem(`${STORAGE_KEY}_cycleCount`);
+            if (saved) return parseInt(saved, 10);
+          } catch {}
+          return 1;
+        });
+
+        const [lossStreak, setLossStreak] = useState(() => {
+          try {
+            const saved = localStorage.getItem(`${STORAGE_KEY}_lossStreak`);
+            if (saved) return parseInt(saved, 10);
+          } catch {}
+          return 0;
+        });
+
+        const [history, setHistory] = useState(() => {
+          try {
+            const saved = localStorage.getItem(`${STORAGE_KEY}_history`);
+            if (saved) return JSON.parse(saved);
+          } catch {}
+          return [];
+        });
+
+        const [undoStack, setUndoStack] = useState([]);
+        const [cycleCompletedNotice, setCycleCompletedNotice] = useState(null);
+
+        // モーダル
+        const [isHitModalOpen, setIsHitModalOpen] = useState(false);
+        const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+        const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+        const [isExplanationTableOpen, setIsExplanationTableOpen] = useState(false);
+        const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+
+        // 的中モーダル入力: ユーザー指定仕様「払い戻し金額だけ入力」
+        const [hitRefundInput, setHitRefundInput] = useState('1200');
+
+        // 手動買い目配分調整
+        const [customPointAmounts, setCustomPointAmounts] = useState(null);
+
+        // 永続化
+        useEffect(() => {
+          try {
+            localStorage.setItem(`${STORAGE_KEY}_settings`, JSON.stringify(settings));
+            localStorage.setItem(`${STORAGE_KEY}_sequence`, JSON.stringify(sequence));
+            localStorage.setItem(`${STORAGE_KEY}_cumBalance`, String(cumulativeBalance));
+            localStorage.setItem(`${STORAGE_KEY}_cycleBalance`, String(cycleBalance));
+            localStorage.setItem(`${STORAGE_KEY}_raceCount`, String(raceCount));
+            localStorage.setItem(`${STORAGE_KEY}_cycleCount`, String(cycleCount));
+            localStorage.setItem(`${STORAGE_KEY}_lossStreak`, String(lossStreak));
+            localStorage.setItem(`${STORAGE_KEY}_history`, JSON.stringify(history));
+            localStorage.setItem(`${STORAGE_KEY}_points`, String(points));
+          } catch {}
+        }, [settings, sequence, cumulativeBalance, cycleBalance, raceCount, cycleCount, lossStreak, history, points]);
+
+        // 計算値
+        const currentUnits = useMemo(() => calculateBetUnits(sequence), [sequence]);
+        const autoAllocation = useMemo(() => {
+          return calculateBetAmounts(currentUnits, settings.unitAmount, points, settings.allocationMode || 'exact');
+        }, [currentUnits, settings.unitAmount, points, settings.allocationMode]);
+
+        const activePointAmounts = useMemo(() => {
+          if (customPointAmounts && customPointAmounts.length === points) return customPointAmounts;
+          return autoAllocation.pointAmounts;
+        }, [customPointAmounts, points, autoAllocation.pointAmounts]);
+
+        const targetTotal = autoAllocation.targetTotal;
+        const actualTotal = useMemo(() => activePointAmounts.reduce((s, v) => s + v, 0), [activePointAmounts]);
+        const perPointAmount = activePointAmounts[0] || 100;
+
+        const { odds4x, odds3x, odds2x, breakEvenOdds } = useMemo(() => {
+          return calculateRequiredOdds(actualTotal, perPointAmount);
+        }, [actualTotal, perPointAmount]);
+
+        const handleAdjustPointAmount = (idx, delta) => {
+          const updated = [...activePointAmounts];
+          updated[idx] = Math.max(100, (updated[idx] || 100) + delta);
+          setCustomPointAmounts(updated);
+        };
+
+        const isBankrollWarning = useMemo(() => {
+          if (settings.bankrollLimit <= 0) return false;
+          return actualTotal >= settings.bankrollLimit || (cumulativeBalance < 0 && Math.abs(cumulativeBalance) + actualTotal >= settings.bankrollLimit);
+        }, [actualTotal, cumulativeBalance, settings.bankrollLimit]);
+
+        const saveSnapshot = useCallback(() => {
+          const snapshot = {
+            sequence: [...sequence],
+            cumulativeBalance,
+            cycleBalance,
+            raceCount,
+            cycleCount,
+            lossStreak,
+            history: [...history],
+            cycleCompletedNotice,
+          };
+          setUndoStack((prev) => [...prev.slice(-30), snapshot]);
+        }, [sequence, cumulativeBalance, cycleBalance, raceCount, cycleCount, lossStreak, history, cycleCompletedNotice]);
+
+        const handleUndo = useCallback(() => {
+          if (undoStack.length === 0) return;
+          const last = undoStack[undoStack.length - 1];
+          setSequence(last.sequence);
+          setCumulativeBalance(last.cumulativeBalance);
+          setCycleBalance(last.cycleBalance);
+          setRaceCount(last.raceCount);
+          setCycleCount(last.cycleCount);
+          setLossStreak(last.lossStreak);
+          setHistory(last.history);
+          setCycleCompletedNotice(last.cycleCompletedNotice);
+          setUndoStack((prev) => prev.slice(0, -1));
+        }, [undoStack]);
+
+        // 不的中 (×)
+        const handleMiss = useCallback(() => {
+          saveSnapshot();
+          const nextSeq = getNextSequenceOnMiss(sequence, currentUnits);
+          const newRaceCount = raceCount + 1;
+          const newCumulative = cumulativeBalance - actualTotal;
+          const newCycleBal = cycleBalance - actualTotal;
+          const newLossStreak = lossStreak + 1;
+
+          const record = {
+            id: `${Date.now()}-${newRaceCount}`,
+            raceNumber: newRaceCount,
+            cycleNumber: cycleCount,
+            sequenceBefore: [...sequence],
+            sequenceAfter: nextSeq,
+            unitsBet: currentUnits,
+            points,
+            actualTotal,
+            result: 'miss',
+            refund: 0,
+            balance: -actualTotal,
+            recoveryRate: 0,
+            updateAction: 'miss',
+            eraseCountPerSide: 0,
+            cycleCompleted: false,
+            timestamp: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          };
+
+          setSequence(nextSeq);
+          setRaceCount(newRaceCount);
+          setCumulativeBalance(newCumulative);
+          setCycleBalance(newCycleBal);
+          setLossStreak(newLossStreak);
+          setHistory((prev) => [record, ...prev]);
+          setCustomPointAmounts(null);
+        }, [saveSnapshot, sequence, currentUnits, raceCount, cumulativeBalance, actualTotal, cycleBalance, lossStreak, cycleCount, points]);
+
+        // 的中モーダルを開く (払い戻し金額だけ入力)
+        const openHitModal = () => {
+          const suggested = Math.max(100, actualTotal * 3);
+          setHitRefundInput(String(suggested));
+          setIsHitModalOpen(true);
+        };
+
+        // 的中試算プレビュー
+        const hitPreview = useMemo(() => {
+          const refund = Math.max(0, parseInt(hitRefundInput, 10) || 0);
+          const balance = refund - actualTotal;
+          const recoveryRate = actualTotal > 0 ? Number((refund / actualTotal).toFixed(2)) : 0;
+          const { nextSequence, updateAction, eraseCountPerSide, totalErasedCount, ruleTitle, explanation } = getNextSequenceOnHit(sequence, currentUnits, recoveryRate, settings.fixedBothEndsMode);
+          const isCycleEnd = nextSequence.length <= 1;
+          const nextUnits = isCycleEnd ? calculateBetUnits(initialSeqArray) : calculateBetUnits(nextSequence);
+          const nextAmounts = calculateBetAmounts(nextUnits, settings.unitAmount, points, settings.allocationMode || 'exact');
+
+          return {
+            refund,
+            balance,
+            recoveryRate,
+            updateAction,
+            eraseCountPerSide,
+            totalErasedCount,
+            ruleTitle,
+            explanation,
+            nextSequence,
+            isCycleEnd,
+            nextUnits,
+            nextTotal: nextAmounts.actualTotal,
+          };
+        }, [hitRefundInput, actualTotal, sequence, currentUnits, settings.fixedBothEndsMode, settings.unitAmount, settings.allocationMode, points, initialSeqArray]);
+
+        // 的中確定
+        const handleConfirmHit = () => {
+          saveSnapshot();
+          const { refund, balance, recoveryRate, updateAction, eraseCountPerSide, nextSequence, isCycleEnd } = hitPreview;
+          const newRaceCount = raceCount + 1;
+          const newCumulative = cumulativeBalance + balance;
+          const newCycleBal = cycleBalance + balance;
+
+          const record = {
+            id: `${Date.now()}-${newRaceCount}`,
+            raceNumber: newRaceCount,
+            cycleNumber: cycleCount,
+            sequenceBefore: [...sequence],
+            sequenceAfter: nextSequence,
+            unitsBet: currentUnits,
+            points,
+            actualTotal,
+            result: 'hit',
+            refund,
+            balance,
+            recoveryRate,
+            updateAction,
+            eraseCountPerSide,
+            cycleCompleted: isCycleEnd,
+            timestamp: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          };
+
+          setRaceCount(newRaceCount);
+          setCumulativeBalance(newCumulative);
+          setLossStreak(0);
+          setHistory((prev) => [record, ...prev]);
+          setIsHitModalOpen(false);
+
+          if (isCycleEnd) {
+            setCycleCompletedNotice({ profit: newCycleBal, cycleNum: cycleCount });
+            if (settings.autoRestartOnComplete) {
+              setSequence(initialSeqArray);
+              setCycleCount((c) => c + 1);
+              setCycleBalance(0);
+            } else {
+              setSequence(nextSequence);
+            }
+          } else {
+            setSequence(nextSequence);
+            setCycleBalance(newCycleBal);
+          }
+          setCustomPointAmounts(null);
+        };
+
+        const handleStartNextCycle = () => {
+          saveSnapshot();
+          setSequence(initialSeqArray);
+          setCycleCount((c) => c + 1);
+          setCycleBalance(0);
+          setCycleCompletedNotice(null);
+        };
+
+        const handleResetAll = () => {
+          saveSnapshot();
+          setSequence(initialSeqArray);
+          setCumulativeBalance(0);
+          setCycleBalance(0);
+          setRaceCount(0);
+          setCycleCount(1);
+          setLossStreak(0);
+          setHistory([]);
+          setCycleCompletedNotice(null);
+          setIsResetConfirmOpen(false);
+        };
+
+        const handleExportCSV = () => {
+          if (history.length === 0) return;
+          const headers = ['レース番号', 'サイクル', '結果', '購入合計(円)', '払戻金(円)', '今回収支(円)', '的中時オッズ', '消去数(片側)', '更新内容', '変化前数列', '変化後数列', '日時'];
+          const rows = history.map((r) => [
+            r.raceNumber,
+            r.cycleNumber,
+            r.result === 'hit' ? '的中(○)' : '不的中(×)',
+            r.actualTotal,
+            r.refund,
+            r.balance,
+            r.recoveryRate > 0 ? r.recoveryRate.toFixed(2) + '倍' : '-',
+            r.eraseCountPerSide || 0,
+            r.updateAction === 'both_dynamic' ? `左右各${r.eraseCountPerSide}個消去` : r.updateAction === 'right' ? '右端消去' : r.updateAction === 'add' ? '右端追加' : '不的中追加',
+            `"[${r.sequenceBefore.join(', ')}]"`,
+            `"[${r.sequenceAfter.join(', ')}]"`,
+            r.timestamp,
+          ]);
+          const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((row) => row.join(','))].join('\r\n');
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          const now = new Date();
+          const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+          link.setAttribute('href', url);
+          link.setAttribute('download', `boatrace_montecarlo_${dateStr}.csv`);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        };
+
+        return (
+          <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between pb-28">
+            {/* ヘッダー */}
+            <header className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 px-4 py-3">
+              <div className="max-w-xl mx-auto flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse-slow"></span>
+                  <div>
+                    <h1 className="font-num text-sm sm:text-base font-bold tracking-wider text-cyan-400">
+                      BOAT RACE MONTE CARLO
+                    </h1>
+                    <p className="text-[10px] text-slate-400">
+                      第 {cycleCount} サイクル • 通算 {raceCount} 戦
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleUndo}
+                    disabled={undoStack.length === 0}
+                    className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                    title="1手戻す"
+                  >
+                    <Icon name="undo" className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsHistoryOpen(true)}
+                    className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-cyan-300 transition-all relative"
+                    title="履歴"
+                  >
+                    <Icon name="history" className="w-4 h-4" />
+                    {history.length > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-cyan-500 text-slate-950 text-[9px] font-bold font-num flex items-center justify-center">
+                        {history.length > 99 ? '99+' : history.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-all"
+                    title="設定"
+                  >
+                    <Icon name="settings" className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </header>
+
+            {/* メインエリア */}
+            <main className="max-w-xl w-full mx-auto p-4 space-y-3.5">
+              {/* サイクル完了バナー */}
+              {cycleCompletedNotice && (
+                <div className="p-3.5 bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/40 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-xl">🏆</span>
+                    <div>
+                      <div className="font-bold text-xs text-emerald-300">サイクル #{cycleCompletedNotice.cycleNum} 完了！</div>
+                      <div className="font-num text-sm font-black text-white">
+                        利益: +¥{cycleCompletedNotice.profit.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleStartNextCycle}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-md transition-all"
+                  >
+                    次のサイクルへ
+                  </button>
+                </div>
+              )}
+
+              {/* 資金上限警告 */}
+              {isBankrollWarning && (
+                <div className="p-3 bg-rose-500/15 border border-rose-500/40 rounded-2xl flex items-center gap-2.5 text-rose-300 text-xs">
+                  <Icon name="alert" className="w-5 h-5 shrink-0 text-rose-400" />
+                  <div>
+                    <span className="font-bold">資金上限アラート:</span> 設定上限（¥{settings.bankrollLimit.toLocaleString()}）に近づいています。損切りを検討してください。
+                  </div>
+                </div>
+              )}
+
+              {/* カード1: 現在の数字列と指数 */}
+              <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold text-slate-400 tracking-wider">
+                    現在の数列 (数字列)
+                  </span>
+                  <span className="text-[10px] text-cyan-400 font-num">
+                    要素数: {sequence.length}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 py-2">
+                  {sequence.length === 0 ? (
+                    <div className="text-emerald-400 font-bold text-sm">全て消去されました (完了)</div>
+                  ) : (
+                    sequence.map((num, idx) => {
+                      const isLeft = idx === 0;
+                      const isRight = idx === sequence.length - 1 && sequence.length > 1;
+                      return (
+                        <span
+                          key={idx}
+                          className={`font-num px-3 py-1.5 rounded-xl text-base font-bold border transition-all ${
+                            isLeft || isRight
+                              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm shadow-cyan-500/20'
+                              : 'bg-slate-800/80 text-slate-300 border-slate-700/60'
+                          }`}
+                        >
+                          {num}
+                        </span>
+                      );
+                    })
+                  )}
+                </div>
+                <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                  <span className="text-slate-400">
+                    次回指数 (両端の和):
+                  </span>
+                  <div className="font-num font-extrabold text-cyan-400 text-lg">
+                    {sequence.length >= 2 ? `${sequence[0]} + ${sequence[sequence.length - 1]} = ` : ''}
+                    <span className="text-xl text-white">{currentUnits}</span> 単位
+                  </div>
+                </div>
+              </section>
+
+              {/* カード2: 点数と資金配分 */}
+              <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-400 tracking-wider">
+                    賭ける点数 & 舟券購入額
+                  </span>
+                  <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettings((prev) => ({ ...prev, allocationMode: 'exact' }));
+                        setCustomPointAmounts(null);
+                      }}
+                      className={`px-2 py-0.5 rounded font-bold transition-all ${
+                        settings.allocationMode === 'exact'
+                          ? 'bg-cyan-500 text-slate-950 shadow'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      🎯 ぴったり配分
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettings((prev) => ({ ...prev, allocationMode: 'uniform' }));
+                        setCustomPointAmounts(null);
+                      }}
+                      className={`px-2 py-0.5 rounded font-bold transition-all ${
+                        settings.allocationMode === 'uniform'
+                          ? 'bg-cyan-500 text-slate-950 shadow'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      ⚖️ 均等切上
+                    </button>
+                  </div>
+                </div>
+
+                {/* 点数セレクター */}
+                <div className="grid grid-cols-6 gap-1.5">
+                  {[1, 2, 3, 4, 5, 6].map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => {
+                        setPoints(p);
+                        setCustomPointAmounts(null);
+                      }}
+                      className={`py-2 rounded-xl font-num font-bold text-xs sm:text-sm border transition-all ${
+                        points === p
+                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md shadow-cyan-500/20'
+                          : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      {p}点
+                    </button>
+                  ))}
+                </div>
+
+                {/* 各買い目の配分リスト */}
+                {points > 1 && (
+                  <div className="pt-1 space-y-1.5">
+                    <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                      <span>買い目ごとの配分 (調整可能):</span>
+                      {customPointAmounts && (
+                        <button
+                          type="button"
+                          onClick={() => setCustomPointAmounts(null)}
+                          className="text-[10px] text-cyan-400 hover:underline"
+                        >
+                          自動配分に戻す
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {activePointAmounts.map((amt, idx) => (
+                        <div
+                          key={idx}
+                          className="bg-slate-950 border border-slate-800 rounded-xl p-2 flex items-center justify-between text-xs"
+                        >
+                          <div>
+                            <div className="text-[9px] text-slate-500">{idx === 0 ? '🎯 1点目(本命)' : `${idx + 1}点目`}</div>
+                            <div className="font-num font-bold text-white text-sm">¥{amt.toLocaleString()}</div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleAdjustPointAmount(idx, -100)}
+                              disabled={amt <= 100}
+                              className="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white font-bold flex items-center justify-center text-xs"
+                            >
+                              -
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAdjustPointAmount(idx, 100)}
+                              className="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold flex items-center justify-center text-xs"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 購入合計額 */}
+                <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] text-slate-400">今回の購入合計 (実際の賭け金)</div>
+                    <div className="text-[11px] text-slate-500">
+                      目標: ¥{targetTotal.toLocaleString()} ({currentUnits}単位)
+                    </div>
+                  </div>
+                  <div className="font-num font-black text-cyan-400 text-2xl">
+                    ¥{actualTotal.toLocaleString()}
+                  </div>
+                </div>
+              </section>
+
+              {/* カード3: 必要オッズ (ダイナミック消去対応) */}
+              <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold text-slate-400 tracking-wider">
+                    必要オッズ (払い戻し ÷ 賭金 ＝ オッズ)
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    オッズ − 1 ＝ 消去数
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="p-2 bg-slate-950 rounded-xl border border-slate-800">
+                    <div className="text-[9px] text-slate-500">4倍消去</div>
+                    <div className="font-num font-bold text-xs sm:text-sm text-cyan-300 mt-0.5">{odds4x.toFixed(1)}倍</div>
+                    <div className="text-[8px] text-slate-400">左右各3個</div>
+                  </div>
+                  <div className="p-2 bg-slate-950 rounded-xl border border-cyan-500/30 bg-cyan-950/10">
+                    <div className="text-[9px] text-cyan-400 font-bold">3倍消去</div>
+                    <div className="font-num font-black text-sm sm:text-base text-cyan-300 mt-0.5">{odds3x.toFixed(1)}倍</div>
+                    <div className="text-[8px] text-cyan-400">左右各2個</div>
+                  </div>
+                  <div className="p-2 bg-slate-950 rounded-xl border border-slate-800">
+                    <div className="text-[9px] text-slate-500">2倍消去</div>
+                    <div className="font-num font-bold text-xs sm:text-sm text-emerald-300 mt-0.5">{odds2x.toFixed(1)}倍</div>
+                    <div className="text-[8px] text-slate-400">左右各1個</div>
+                  </div>
+                  <div className="p-2 bg-slate-950 rounded-xl border border-slate-800">
+                    <div className="text-[9px] text-slate-500">損益分岐</div>
+                    <div className="font-num font-bold text-xs sm:text-sm text-amber-300 mt-0.5">{breakEvenOdds.toFixed(1)}倍</div>
+                    <div className="text-[8px] text-slate-400">トントン</div>
+                  </div>
+                </div>
+              </section>
+
+              {/* カード4: 収支・成績サマリー */}
+              <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
+                <div className="grid grid-cols-4 gap-2 text-center font-num">
+                  <div className="p-2 bg-slate-950 rounded-xl border border-slate-800">
+                    <div className="text-[10px] text-slate-400">通算収支</div>
+                    <div className={`font-bold text-sm mt-0.5 ${cumulativeBalance > 0 ? 'text-emerald-400' : cumulativeBalance < 0 ? 'text-rose-400' : 'text-slate-300'}`}>
+                      {cumulativeBalance > 0 ? '+' : ''}¥{cumulativeBalance.toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="p-2 bg-slate-950 rounded-xl border border-slate-800">
+                    <div className="text-[10px] text-slate-400">サイクル収支</div>
+                    <div className={`font-bold text-sm mt-0.5 ${cycleBalance > 0 ? 'text-emerald-400' : cycleBalance < 0 ? 'text-rose-400' : 'text-slate-300'}`}>
+                      {cycleBalance > 0 ? '+' : ''}¥{cycleBalance.toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="p-2 bg-slate-950 rounded-xl border border-slate-800">
+                    <div className="text-[10px] text-slate-400">実施レース</div>
+                    <div className="font-bold text-sm text-cyan-300 mt-0.5">
+                      {raceCount} <span className="text-[10px] font-normal text-slate-500">戦</span>
+                    </div>
+                  </div>
+                  <div className="p-2 bg-slate-950 rounded-xl border border-slate-800">
+                    <div className="text-[10px] text-slate-400">連敗数</div>
+                    <div className={`font-bold text-sm mt-0.5 ${lossStreak >= 4 ? 'text-rose-400 font-black' : 'text-slate-200'}`}>
+                      {lossStreak} <span className="text-[10px] font-normal text-slate-500">連敗</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* 下部リンク */}
+              <div className="flex items-center justify-between text-xs text-slate-500 px-1 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsExplanationTableOpen(true)}
+                  className="flex items-center gap-1.5 text-amber-400 hover:text-amber-300 font-bold transition-colors"
+                >
+                  <Icon name="book-open" className="w-4 h-4" />
+                  <span>モンテカルロ法の解説表を見る</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsResetConfirmOpen(true)}
+                  className="flex items-center gap-1.5 text-slate-400 hover:text-rose-400 transition-colors"
+                >
+                  <Icon name="rotate-ccw" className="w-3.5 h-3.5" />
+                  <span>リセット</span>
+                </button>
+              </div>
+            </main>
+
+            {/* 固定アクションバー (不的中 / 的中) */}
+            <div className="fixed bottom-0 left-0 right-0 z-20 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 p-3">
+              <div className="max-w-xl mx-auto grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={handleMiss}
+                  disabled={sequence.length === 0}
+                  className="h-14 rounded-2xl bg-slate-900 border border-slate-700 hover:bg-slate-800 active:scale-[0.98] text-rose-400 font-bold flex items-center justify-center gap-2 text-base shadow-lg disabled:opacity-40 transition-all"
+                >
+                  <Icon name="x-circle" className="w-6 h-6 text-rose-500" />
+                  <div className="text-left">
+                    <div className="leading-none text-sm text-slate-200">不的中 (×)</div>
+                    <div className="text-[10px] text-slate-400 font-normal font-num mt-0.5">
+                      右端に +{currentUnits}
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={openHitModal}
+                  disabled={sequence.length === 0}
+                  className="h-14 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 active:scale-[0.98] text-slate-950 font-black flex items-center justify-center gap-2 text-base shadow-lg shadow-emerald-500/20 disabled:opacity-40 transition-all"
+                >
+                  <Icon name="check-circle" className="w-6 h-6 text-slate-950" />
+                  <div className="text-left">
+                    <div className="leading-none text-sm font-extrabold text-slate-950">的中！(○)</div>
+                    <div className="text-[10px] text-slate-900/80 font-bold font-num mt-0.5">
+                      払戻金入力へ
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* 的中モーダル (払い戻し金額だけ入力) */}
+            {isHitModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-sm">
+                <div className="bg-slate-900 border border-slate-700 w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">🎯</span>
+                      <div>
+                        <h3 className="text-base font-bold text-white">的中・払い戻し金額の入力</h3>
+                        <p className="text-[11px] text-slate-400">払戻金からオッズと消去数を自動判定</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsHitModalOpen(false)}
+                      className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
+                    >
+                      <Icon name="x" className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* 払い戻し金額 入力フィールド */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <label className="font-semibold text-slate-300">払い戻し金額 (円)</label>
+                      <span className="text-[11px] font-num text-cyan-400 font-bold">
+                        的中時オッズ: {hitPreview.recoveryRate.toFixed(2)} 倍
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        step="10"
+                        value={hitRefundInput}
+                        onChange={(e) => setHitRefundInput(e.target.value)}
+                        placeholder="例: 1200"
+                        className="w-full h-12 bg-slate-950 border border-slate-700 rounded-xl px-3 text-xl font-bold font-num text-white focus:outline-none focus:border-cyan-400"
+                      />
+                      <span className="absolute right-3 top-3 text-sm text-slate-500">円</span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 px-0.5 pt-0.5 font-num">
+                      <span>今回賭金: <strong className="text-slate-200">¥{actualTotal.toLocaleString()}</strong></span>
+                      <span>収支: <strong className={hitPreview.balance >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {hitPreview.balance >= 0 ? '+' : ''}¥{hitPreview.balance.toLocaleString()}
+                      </strong></span>
+                    </div>
+
+                    {/* クイック払戻金ボタン */}
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {[
+                        { label: `2倍 (¥${(actualTotal * 2).toLocaleString()})`, val: actualTotal * 2 },
+                        { label: `3倍 (¥${(actualTotal * 3).toLocaleString()})`, val: actualTotal * 3 },
+                        { label: `4倍 (¥${(actualTotal * 4).toLocaleString()})`, val: actualTotal * 4 },
+                        { label: `トントン (¥${actualTotal.toLocaleString()})`, val: actualTotal },
+                        { label: '+¥500', add: 500 },
+                        { label: '+¥1,000', add: 1000 },
+                        { label: '+¥3,000', add: 3000 },
+                        { label: '+¥10,000', add: 10000 },
+                      ].map((btn, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            if ('val' in btn) setHitRefundInput(String(btn.val));
+                            else if ('add' in btn) {
+                              const cur = parseInt(hitRefundInput, 10) || 0;
+                              setHitRefundInput(String(Math.max(0, cur + btn.add)));
+                            }
+                          }}
+                          className="px-2 py-1 text-[11px] rounded bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 border border-slate-700 font-medium font-num transition-transform"
+                        >
+                          {btn.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* リアルタイム消去判定プレビュー */}
+                  <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-bold text-slate-400 tracking-wider flex items-center justify-between">
+                        <span>消去ルール判定</span>
+                        <span className="text-[10px] text-cyan-400 font-num">
+                          払戻¥{hitPreview.refund.toLocaleString()} ÷ 賭金¥{actualTotal.toLocaleString()} ＝ {hitPreview.recoveryRate.toFixed(2)}倍
+                        </span>
+                      </div>
+                      <div className="text-[11px] font-bold py-1.5 px-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+                        {hitPreview.eraseCountPerSide >= 1 ? (
+                          <span className="text-emerald-400 flex items-center gap-1.5 font-num flex-wrap">
+                            <span className="text-xs">🎯 的中時オッズ {hitPreview.recoveryRate.toFixed(1)}倍 − 1 ＝</span>
+                            <strong className="text-emerald-300 text-xs">左右から各{hitPreview.eraseCountPerSide}個ずつ消去</strong>
+                            <span className="text-[10px] text-slate-400 font-normal">(計{hitPreview.totalErasedCount}個消去)</span>
+                          </span>
+                        ) : hitPreview.updateAction === 'right' ? (
+                          <span className="text-amber-400 font-num text-xs">⚠️ 的中時オッズ 1倍台 ➔ 右端のみ1個消去</span>
+                        ) : (
+                          <span className="text-rose-400 font-num text-xs">❌ トリガミ (回収率1倍未満) ➔ 右端に指数(+{currentUnits})を追加</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-center pt-1 border-t border-slate-800 font-num">
+                      <div>
+                        <div className="text-[10px] text-slate-500">払戻金</div>
+                        <div className="font-bold text-emerald-400 text-sm mt-0.5">¥{hitPreview.refund.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-500">今回収支</div>
+                        <div className={`font-bold text-sm mt-0.5 ${hitPreview.balance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {hitPreview.balance >= 0 ? '+' : ''}¥{hitPreview.balance.toLocaleString()}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-500">的中時オッズ</div>
+                        <div className="font-bold text-cyan-300 text-sm mt-0.5">{hitPreview.recoveryRate.toFixed(2)}倍</div>
+                      </div>
+                    </div>
+
+                    {/* 赤字打ち消し線アニメーションプレビュー */}
+                    <div className="pt-2 border-t border-slate-800 space-y-1">
+                      <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                        <span>消去プレビュー:</span>
+                        <span className="text-[10px] text-slate-500 font-num">消去: {hitPreview.totalErasedCount}個</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 bg-slate-900 px-2.5 py-2 rounded-lg font-num text-xs">
+                        {sequence.map((num, idx) => {
+                          let isErased = false;
+                          if (hitPreview.eraseCountPerSide >= 1) {
+                            isErased = idx < hitPreview.eraseCountPerSide || idx >= sequence.length - hitPreview.eraseCountPerSide;
+                          } else if (hitPreview.updateAction === 'right') {
+                            isErased = idx === sequence.length - 1;
+                          }
+                          return (
+                            <span
+                              key={idx}
+                              className={`px-1.5 py-0.5 rounded font-bold transition-all ${
+                                isErased
+                                  ? 'line-through text-rose-400/80 bg-rose-500/10 decoration-rose-500 decoration-2'
+                                  : 'text-slate-200 bg-slate-800'
+                              }`}
+                            >
+                              {num}
+                            </span>
+                          );
+                        })}
+                        <span className="text-slate-500 mx-1">➔</span>
+                        <span className="text-emerald-400 font-bold">
+                          {hitPreview.nextSequence.length === 0 ? 'クリア！(サイクル完了)' : `[${hitPreview.nextSequence.join(', ')}]`}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1">
+                      <span className="text-slate-400">次回賭金:</span>
+                      <span className="font-num font-bold text-cyan-400">
+                        ¥{hitPreview.nextTotal.toLocaleString()} ({hitPreview.nextUnits}単位)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsHitModalOpen(false)}
+                      className="h-11 rounded-xl border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 font-bold text-xs"
+                    >
+                      戻る
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmHit}
+                      className="h-11 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-sm shadow-md"
+                    >
+                      確定する
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* モンテカルロ法の解説表モーダル */}
+            {isExplanationTableOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm">
+                <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl p-4 sm:p-5 flex flex-col max-h-[90vh]">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">📋</span>
+                      <div>
+                        <h3 className="text-base font-bold text-white">モンテカルロ法の解説表 (添付画像準拠)</h3>
+                        <p className="text-[11px] text-slate-400">基準100円の10レース推移</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsExplanationTableOpen(false)}
+                      className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
+                    >
+                      <Icon name="x" className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="my-3 p-3 bg-amber-950/40 border border-amber-600/50 rounded-xl text-xs text-amber-200">
+                    <p className="font-bold text-amber-300">★ 画像の重要消去ルール:</p>
+                    <p className="mt-0.5 font-num text-[11px]">
+                      <strong>合成オッズ(この場合は3倍) − 1 ＝ 2個数式を消す</strong><br />
+                      ・3倍的中: (3 − 1) = <strong>両端から2個ずつ（左2個＋右2個＝計4個）消去！</strong><br />
+                      ・2倍的中: (2 − 1) = <strong>両端から1個ずつ（左1個＋右1個＝計2個）消去！</strong>
+                    </p>
+                  </div>
+
+                  <div className="flex-1 overflow-x-auto overflow-y-auto">
+                    <table className="w-full text-[11px] text-left border-collapse font-num">
+                      <thead>
+                        <tr className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                          <th className="py-2 px-1.5 text-center">レース</th>
+                          <th className="py-2 px-1.5">数列</th>
+                          <th className="py-2 px-1 text-center">指数</th>
+                          <th className="py-2 px-1 text-center">的中</th>
+                          <th className="py-2 px-1.5 text-center">合成オッズ</th>
+                          <th className="py-2 px-2">終了後の数列</th>
+                          <th className="py-2 px-1.5 text-right">賭金</th>
+                          <th className="py-2 px-1.5 text-right">払い戻し</th>
+                          <th className="py-2 px-2 text-right">収支</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/80">
+                        {SAMPLE_EXPLANATION_TABLE.map((row) => (
+                          <tr key={row.race} className={`hover:bg-slate-800/50 ${row.hit === '○' ? 'bg-emerald-950/20' : ''}`}>
+                            <td className="py-2 px-1.5 text-center font-bold text-slate-300">{row.race}</td>
+                            <td className="py-2 px-1.5 text-slate-300">{row.before.join('・')}</td>
+                            <td className="py-2 px-1 text-center font-bold text-cyan-400">{row.index}</td>
+                            <td className="py-2 px-1 text-center font-bold">{row.hit === '○' ? <span className="text-emerald-400">○</span> : <span className="text-rose-400">×</span>}</td>
+                            <td className="py-2 px-1.5 text-center font-bold text-amber-300">{row.odds}</td>
+                            <td className="py-2 px-2 text-rose-400 font-semibold">{row.afterVisual}</td>
+                            <td className="py-2 px-1.5 text-right text-slate-300">¥{row.bet.toLocaleString()}</td>
+                            <td className="py-2 px-1.5 text-right text-emerald-400 font-bold">{row.refund > 0 ? `¥${row.refund.toLocaleString()}` : '-'}</td>
+                            <td className={`py-2 px-2 text-right font-bold ${row.balance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{row.balance >= 0 ? '+' : ''}¥{row.balance.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-800 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setIsExplanationTableOpen(false)}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold"
+                    >
+                      閉じる
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 履歴モーダル */}
+            {isHistoryOpen && (
+              <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-sm">
+                <div className="bg-slate-900 border border-slate-700 w-full sm:max-w-2xl rounded-t-3xl sm:rounded-2xl shadow-2xl p-5 space-y-4 max-h-[88vh] flex flex-col">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <Icon name="history" className="w-5 h-5 text-cyan-400" />
+                      <h3 className="text-base font-bold text-white">実践レース履歴 ({history.length}件)</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleExportCSV}
+                        disabled={history.length === 0}
+                        className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white font-bold text-xs flex items-center gap-1 shadow"
+                      >
+                        <Icon name="download" className="w-3.5 h-3.5" />
+                        <span>CSV出力</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsHistoryOpen(false)}
+                        className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
+                      >
+                        <Icon name="x" className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                    {history.length === 0 ? (
+                      <div className="text-center py-12 text-slate-500 text-xs">
+                        まだ履歴がありません。「的中」または「不的中」を押すと自動記録されます。
+                      </div>
+                    ) : (
+                      history.map((record) => (
+                        <div key={record.id} className="bg-slate-950/70 border border-slate-800 rounded-xl p-3 text-xs space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${record.result === 'hit' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'}`}>
+                                {record.result === 'hit' ? '的中(○)' : '不的中(×)'}
+                              </span>
+                              <span className="font-num font-bold text-slate-300">Race #{record.raceNumber}</span>
+                              <span className="text-[10px] text-slate-500">(Cycle #{record.cycleNumber})</span>
+                            </div>
+                            <span className="text-[10px] text-slate-500">{record.timestamp}</span>
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-2 text-[11px] font-num pt-1">
+                            <div><span className="text-slate-500 block text-[9px]">購入合計</span><span className="text-slate-300">¥{record.actualTotal.toLocaleString()}</span></div>
+                            <div><span className="text-slate-500 block text-[9px]">払戻金</span><span className="text-emerald-400">{record.refund > 0 ? `¥${record.refund.toLocaleString()}` : '-'}</span></div>
+                            <div><span className="text-slate-500 block text-[9px]">損益</span><span className={`font-bold ${record.balance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{record.balance >= 0 ? '+' : ''}¥{record.balance.toLocaleString()}</span></div>
+                            <div><span className="text-slate-500 block text-[9px]">的中時オッズ</span><span className="text-cyan-300">{record.recoveryRate > 0 ? `${record.recoveryRate.toFixed(2)}倍` : '-'}</span></div>
+                          </div>
+
+                          <div className="pt-1 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-num text-slate-400">
+                            <div className="flex items-center gap-1.5">
+                              <span>[{record.sequenceBefore.join(', ')}]</span>
+                              <span>➔</span>
+                              <span className="text-white font-bold">[{record.sequenceAfter.join(', ')}]</span>
+                            </div>
+                            <span className="text-slate-500">
+                              {record.updateAction === 'both_dynamic' ? `左右各${record.eraseCountPerSide}個消去` : record.updateAction === 'right' ? '右端消去' : record.updateAction === 'add' ? '右端追加' : '不的中追加'}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 設定モーダル */}
+            {isSettingsOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+                <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl shadow-2xl p-5 space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <Icon name="settings" className="w-5 h-5 text-cyan-400" />
+                      <h3 className="text-base font-bold text-white">設定</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsSettingsOpen(false)}
+                      className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
+                    >
+                      <Icon name="x" className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <label className="text-slate-300 font-bold block mb-1">初期数字列 (カンマ区切り)</label>
+                      <input
+                        type="text"
+                        value={settings.initialSequenceStr}
+                        onChange={(e) => setSettings({ ...settings, initialSequenceStr: e.target.value })}
+                        className="w-full h-10 bg-slate-950 border border-slate-700 rounded-xl px-3 font-num text-white"
+                        placeholder="例: 1, 2, 3"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-300 font-bold block mb-1">1単位の金額 (円)</label>
+                      <input
+                        type="number"
+                        step="100"
+                        value={settings.unitAmount}
+                        onChange={(e) => setSettings({ ...settings, unitAmount: Math.max(10, parseInt(e.target.value, 10) || 100) })}
+                        className="w-full h-10 bg-slate-950 border border-slate-700 rounded-xl px-3 font-num text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-300 font-bold block mb-1">デフォルト賭け点数 (1〜6点)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="6"
+                        value={settings.defaultPoints}
+                        onChange={(e) => setSettings({ ...settings, defaultPoints: Math.max(1, Math.min(6, parseInt(e.target.value, 10) || 1)) })}
+                        className="w-full h-10 bg-slate-950 border border-slate-700 rounded-xl px-3 font-num text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-300 font-bold block mb-1">資金上限アラート (円、0で無効)</label>
+                      <input
+                        type="number"
+                        step="1000"
+                        value={settings.bankrollLimit}
+                        onChange={(e) => setSettings({ ...settings, bankrollLimit: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                        className="w-full h-10 bg-slate-950 border border-slate-700 rounded-xl px-3 font-num text-white"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-slate-300">サイクル完了時に自動で初期数列へ再開</span>
+                      <input
+                        type="checkbox"
+                        checked={settings.autoRestartOnComplete}
+                        onChange={(e) => setSettings({ ...settings, autoRestartOnComplete: e.target.checked })}
+                        className="w-4 h-4 accent-cyan-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setIsSettingsOpen(false)}
+                      className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs"
+                    >
+                      保存して閉じる
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* リセット確認モーダル */}
+            {isResetConfirmOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-2xl shadow-2xl p-5 space-y-4">
+                  <div className="flex items-center gap-2 text-rose-400">
+                    <Icon name="alert" className="w-5 h-5" />
+                    <h3 className="text-base font-bold text-white">リセットの確認</h3>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    現在の数列・収支・連敗数などの進行データを全消去して初期状態に戻しますか？
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsResetConfirmOpen(false)}
+                      className="h-10 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs"
+                    >
+                      キャンセル
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetAll}
+                      className="h-10 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs"
+                    >
+                      全てリセット
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
   </body>
 </html>
-
